@@ -81,6 +81,22 @@ func TestInspectPythonRepo(t *testing.T) {
 	}
 }
 
+func TestInspectRecordsEntrypointPaths(t *testing.T) {
+	res := inspectFixture(t, "node-repo")
+	if len(res.Meta.EntrypointPaths) == 0 {
+		t.Fatal("inspection must record where a CLI entrypoint actually lives")
+	}
+	found := false
+	for _, p := range res.Meta.EntrypointPaths {
+		if strings.Contains(p, "widget") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("entrypoint path missing: %v", res.Meta.EntrypointPaths)
+	}
+}
+
 func TestInspectGoRepo(t *testing.T) {
 	res := inspectFixture(t, "go-repo")
 	if res.Meta.Name != "go-widget" {

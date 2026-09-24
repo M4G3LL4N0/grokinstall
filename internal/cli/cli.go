@@ -25,7 +25,7 @@ import (
 )
 
 // Version is the GrokInstall version reported by --version.
-const Version = "0.1.0-part1"
+const Version = "0.2.0"
 
 type globalFlags struct {
 	jsonOutput bool
@@ -59,6 +59,14 @@ func NewRoot() *cobra.Command {
 		newCompareCommand(g),
 		newDoctorCommand(g),
 		newUsageCommand(g),
+		newInstallCommand(g),
+		newRunCommand(g),
+		newTestCommand(g),
+		newListCommand(g),
+		newInfoCommand(g),
+		newCapabilitiesCommand(g),
+		newGrokbotCommand(g),
+		newUninstallCommand(g),
 	)
 	return root
 }
@@ -84,6 +92,11 @@ func (g *globalFlags) state() (*registry.Registry, error) {
 }
 
 func (g *globalFlags) usageDir(reg *registry.Registry) string { return reg.LogsDir() }
+
+// recordUsage appends a measured event. Telemetry must never break a command.
+func (g *globalFlags) recordUsage(reg *registry.Registry, ev usage.Event) {
+	_ = usage.Record(g.usageDir(reg), ev)
+}
 
 func writeJSON(cmd *cobra.Command, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
@@ -175,7 +188,7 @@ func renderInspection(w io.Writer, res *inspect.Result) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
-	fmt.Fprintf(w, "\nPart 1 stops here: nothing was installed or executed.\n")
+	fmt.Fprintf(w, "\nNothing was installed or executed by this command.\n")
 }
 
 func securityNotes(res *inspect.Result) []string {
@@ -256,7 +269,7 @@ func newPlanCommand(g *globalFlags) *cobra.Command {
 }
 
 func renderPlan(w io.Writer, p *plan.Plan) {
-	fmt.Fprintf(w, "GrokInstall plan (Part 1: planning only)\n\n")
+	fmt.Fprintf(w, "GrokInstall plan (planning only; no changes were made)\n\n")
 	fmt.Fprintf(w, "Source:  %s\n", p.Source.Canonical)
 	if p.Goal != "" {
 		fmt.Fprintf(w, "Goal:    %s\n", p.Goal)
@@ -312,7 +325,7 @@ func renderPlan(w io.Writer, p *plan.Plan) {
 
 	fmt.Fprintf(w, "\nDraft capability manifest (%s, execution supported: %v)\n", p.Manifest.Schema, p.ManifestSupported)
 	fmt.Fprintf(w, "%s", indent(p.Manifest.ContractText(), "  "))
-	fmt.Fprintf(w, "\nNothing was installed or executed. Part 1 stops at planning.\n")
+	fmt.Fprintf(w, "\nThis command plans only. Use `grokinstall install` to create a capability.\n")
 }
 
 func newCompareCommand(g *globalFlags) *cobra.Command {
@@ -467,11 +480,17 @@ func newUsageCommand(g *globalFlags) *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Usage (measured)\n")
 			fmt.Fprintf(cmd.OutOrStdout(), "  operations:        %d\n", sum.TotalEvents)
+			fmt.Fprintf(cmd.OutOrStdout(), "  installs:          %d\n", sum.Installs)
+			fmt.Fprintf(cmd.OutOrStdout(), "  runs:              %d\n", sum.Runs)
+			fmt.Fprintf(cmd.OutOrStdout(), "  tests:             %d\n", sum.Tests)
+			fmt.Fprintf(cmd.OutOrStdout(), "  uninstalls:        %d\n", sum.Uninstalls)
 			fmt.Fprintf(cmd.OutOrStdout(), "  cache hits:        %d\n", sum.CacheHits)
 			fmt.Fprintf(cmd.OutOrStdout(), "  cache misses:      %d\n", sum.CacheMisses)
 			fmt.Fprintf(cmd.OutOrStdout(), "  worker calls:      %d\n", sum.WorkerInvocations)
 			fmt.Fprintf(cmd.OutOrStdout(), "  context pack bytes: %d\n", sum.ContextPackBytes)
 			fmt.Fprintf(cmd.OutOrStdout(), "  contract bytes:     %d\n", sum.GrokBotContractBytes)
+			fmt.Fprintf(cmd.OutOrStdout(), "  capability input:   %d bytes\n", sum.CapabilityInputBytes)
+			fmt.Fprintf(cmd.OutOrStdout(), "  capability output:  %d bytes\n", sum.CapabilityOutputBytes)
 			keys := make([]string, 0, len(sum.ByOp))
 			for k := range sum.ByOp {
 				keys = append(keys, k)

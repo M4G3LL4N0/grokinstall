@@ -82,7 +82,7 @@ func (s *scanner) parsePackageJSON(rel string, data []byte, isRoot bool) {
 		s.res.Meta.Dependencies = append(s.res.Meta.Dependencies, dep)
 	}
 	// bin may be a string or a map; both declare CLI entrypoints.
-	extractBin(data, s, rel)
+	extractBin(data, s, rel, isRoot)
 	s.recordInstallScripts(p.Scripts, rel)
 	if _, ok := p.Scripts["start"]; ok {
 		s.add("local_service_hint", evidence.ConfidenceLow, rel+" defines a start script")
@@ -92,7 +92,7 @@ func (s *scanner) parsePackageJSON(rel string, data []byte, isRoot bool) {
 	}
 }
 
-func extractBin(data []byte, s *scanner, rel string) {
+func extractBin(data []byte, s *scanner, rel string, isRoot bool) {
 	var probe struct {
 		Bin json.RawMessage `json:"bin"`
 	}
@@ -101,17 +101,25 @@ func extractBin(data []byte, s *scanner, rel string) {
 	}
 	var binMap map[string]string
 	if err := json.Unmarshal(probe.Bin, &binMap); err == nil {
-		for name := range binMap {
+		for name, target := range binMap {
 			s.res.Meta.Entrypoints = append(s.res.Meta.Entrypoints, name)
+			// Record where the command actually lives, so an installer can
+			// invoke it without guessing where the project put it.
+			if isRoot && target != "" {
+				s.res.Meta.EntrypointPaths = append(s.res.Meta.EntrypointPaths, filepath.ToSlash(target))
+			}
 			s.add("cli_entrypoint", evidence.ConfidenceHigh,
-				fmt.Sprintf("%s bin field declares command %q", rel, name))
+				fmt.Sprintf("%s bin field declares command %q at %q", rel, name, target))
 		}
 		return
 	}
 	var binStr string
 	if err := json.Unmarshal(probe.Bin, &binStr); err == nil && binStr != "" {
 		s.res.Meta.Entrypoints = append(s.res.Meta.Entrypoints, filepath.Base(binStr))
-		s.add("cli_entrypoint", evidence.ConfidenceHigh, rel+" bin field declares a command")
+		if isRoot {
+			s.res.Meta.EntrypointPaths = append(s.res.Meta.EntrypointPaths, filepath.ToSlash(binStr))
+		}
+		s.add("cli_entrypoint", evidence.ConfidenceHigh, rel+" bin field declares a command at "+binStr)
 	}
 }
 

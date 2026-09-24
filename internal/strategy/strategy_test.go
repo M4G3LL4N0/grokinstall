@@ -78,6 +78,25 @@ func TestCLIBridgeRecommendedForCLI(t *testing.T) {
 	}
 }
 
+func TestKnowledgeGoalWinsOverAvailableCLI(t *testing.T) {
+	// A project can ship both a CLI and documentation. When the user explicitly
+	// asks for documentation retrieval, indexing the docs is the smaller and
+	// more faithful capability, even though a CLI is also available.
+	c := Compare("Let GrokBot retrieve relevant documentation about this project",
+		caps(capability.KindCLI, capability.KindKnowledge), evidence.New(), fullProfile())
+	if c.Recommended != StrategyKnowledgeImport {
+		t.Fatalf("recommended = %q, want knowledge_import for a documentation goal", c.Recommended)
+	}
+}
+
+func TestExecutionGoalStillPrefersCLI(t *testing.T) {
+	// The goal-awareness rule must not override an explicitly operational goal.
+	c := Compare("let GrokBot run this project's CLI", caps(capability.KindCLI, capability.KindKnowledge), evidence.New(), fullProfile())
+	if c.Recommended != StrategyCLIBridge {
+		t.Fatalf("recommended = %q, want cli_bridge for an execution goal", c.Recommended)
+	}
+}
+
 func TestNoInstallRecommendedWhenNothingIsUsable(t *testing.T) {
 	c := Compare("summarize this documentation", nil, evidence.New(), fullProfile())
 	if c.Recommended != StrategyNoInstall {

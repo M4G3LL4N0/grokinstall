@@ -539,6 +539,15 @@ func recommend(ctx compareContext) (ID, string, []string, evidence.Confidence) {
 	// Order encodes the product rule: install the smallest thing that satisfies
 	// the goal, and prefer not installing at all when the goal needs less than
 	// the source provides.
+	//
+	// The goal decides first. A project can ship both a CLI and documentation;
+	// if the user explicitly asks to retrieve documentation, indexing the docs
+	// is the smaller and more faithful capability than exposing a command.
+	if ctx.has(capability.KindKnowledge) && wantsKnowledge(ctx.goal) && wantsKnowledgeStrongly(ctx.goal) {
+		return StrategyKnowledgeImport,
+			"The goal is documentation retrieval, so indexing the project's own docs is smaller and more faithful than exposing its command line.",
+			ctx.evidenceFor("documentation"), evidence.ConfidenceHigh
+	}
 	if ctx.has(capability.KindCLI) {
 		ev := ctx.evidenceFor("cli_entrypoint")
 		return StrategyCLIBridge,
@@ -583,6 +592,22 @@ func recommend(ctx compareContext) (ID, string, []string, evidence.Confidence) {
 	return StrategyNoInstall,
 		"No executable capability was detected, so the correct answer is not to install the source.",
 		nil, evidence.ConfidenceMedium
+}
+
+// wantsKnowledgeStrongly reports an explicit request to retrieve, read or
+// search documentation, as opposed to a passing mention of the word "docs".
+func wantsKnowledgeStrongly(goal string) bool {
+	strong := []string{
+		"documentation", "docs", "documented", "readme", "guide", "manual",
+		"reference", "knowledge", "search the", "retrieve", "look up", "lookup",
+		"answer question", "explain how", "find out about",
+	}
+	for _, kw := range strong {
+		if strings.Contains(goal, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func wantsKnowledge(goal string) bool {

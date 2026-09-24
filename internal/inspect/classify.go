@@ -309,6 +309,7 @@ func truncate(s string, n int) string {
 func (m *Meta) finalize() {
 	m.Languages = sortedUnique(m.Languages)
 	m.Entrypoints = sortedUnique(m.Entrypoints)
+	m.EntrypointPaths = sortedUnique(m.EntrypointPaths)
 	m.Dependencies = sortedUnique(m.Dependencies)
 }
 

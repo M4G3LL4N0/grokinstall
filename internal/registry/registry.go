@@ -30,20 +30,6 @@ func DefaultConfig() Config {
 	return Config{Schema: Schema, Version: "v1", Workers: map[string]string{}}
 }
 
-// Entry is one installed capability. Part 1 writes none; the type exists so the
-// registry shape is stable for later parts.
-type Entry struct {
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Strategy     string   `json:"strategy"`
-	Source       string   `json:"source"`
-	Goal         string   `json:"goal,omitempty"`
-	ManifestPath string   `json:"manifest_path,omitempty"`
-	AdapterPath  string   `json:"adapter_path,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	InstalledAt  string   `json:"installed_at,omitempty"`
-}
-
 // Registry is the state directory plus its canonical JSON files.
 type Registry struct {
 	Root  string
@@ -92,40 +78,6 @@ func (r *Registry) SaveConfig(cfg Config) error {
 		cfg.Schema = Schema
 	}
 	return cache.WriteJSONAtomic(r.ConfigPath(), cfg)
-}
-
-// List returns installed capability entries.
-func (r *Registry) List() ([]Entry, error) {
-	data, err := os.ReadFile(r.RegistryPath())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var payload struct {
-		Schema  string  `json:"schema"`
-		Entries []Entry `json:"entries"`
-		Legacy  []Entry `json:"capabilities"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", r.RegistryPath(), err)
-	}
-	if len(payload.Entries) > 0 {
-		return payload.Entries, nil
-	}
-	return payload.Legacy, nil
-}
-
-// WriteRegistry writes the entry list atomically.
-func (r *Registry) WriteRegistry(entries []Entry) error {
-	if entries == nil {
-		entries = []Entry{}
-	}
-	return cache.WriteJSONAtomic(r.RegistryPath(), map[string]any{
-		"schema":  Schema,
-		"entries": entries,
-	})
 }
 
 // Writable reports whether the state directory can be written to.

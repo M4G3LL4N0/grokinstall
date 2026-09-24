@@ -66,12 +66,15 @@ type File struct {
 
 // Meta is the small factual summary of a source.
 type Meta struct {
-	Name         string   `json:"name,omitempty"`
-	Version      string   `json:"version,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Languages    []string `json:"languages,omitempty"`
-	Entrypoints  []string `json:"entrypoints,omitempty"`
-	Dependencies []string `json:"dependencies,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Languages   []string `json:"languages,omitempty"`
+	Entrypoints []string `json:"entrypoints,omitempty"`
+	// EntrypointPaths are where declared commands actually live, so an
+	// installer can invoke them without guessing.
+	EntrypointPaths []string `json:"entrypoint_paths,omitempty"`
+	Dependencies    []string `json:"dependencies,omitempty"`
 }
 
 // SecurityReport summarizes what inspection saw that matters for safety.

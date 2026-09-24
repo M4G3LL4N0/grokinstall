@@ -37,17 +37,18 @@ type Options struct {
 
 // InspectionSummary is the small view of inspection carried inside a plan.
 type InspectionSummary struct {
-	Identity     string   `json:"identity"`
-	CommitSHA    string   `json:"commit_sha,omitempty"`
-	Kind         string   `json:"kind"`
-	Name         string   `json:"name,omitempty"`
-	Version      string   `json:"version,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Languages    []string `json:"languages,omitempty"`
-	Entrypoints  []string `json:"entrypoints,omitempty"`
-	FilesScanned int      `json:"files_scanned"`
-	CacheHit     bool     `json:"cache_hit"`
-	Truncated    bool     `json:"truncated"`
+	Identity        string   `json:"identity"`
+	CommitSHA       string   `json:"commit_sha,omitempty"`
+	Kind            string   `json:"kind"`
+	Name            string   `json:"name,omitempty"`
+	Version         string   `json:"version,omitempty"`
+	Description     string   `json:"description,omitempty"`
+	Languages       []string `json:"languages,omitempty"`
+	Entrypoints     []string `json:"entrypoints,omitempty"`
+	EntrypointPaths []string `json:"entrypoint_paths,omitempty"`
+	FilesScanned    int      `json:"files_scanned"`
+	CacheHit        bool     `json:"cache_hit"`
+	Truncated       bool     `json:"truncated"`
 }
 
 // Security is the plan's view of inspection risk.
@@ -137,17 +138,18 @@ func Build(ctx context.Context, opts Options) (*Plan, error) {
 		IsSelf:        isSelf(opts.Source, res),
 		Understanding: understanding,
 		Inspection: InspectionSummary{
-			Identity:     res.Identity,
-			CommitSHA:    res.CommitSHA,
-			Kind:         string(opts.Source.Kind),
-			Name:         res.Meta.Name,
-			Version:      res.Meta.Version,
-			Description:  res.Meta.Description,
-			Languages:    res.Meta.Languages,
-			Entrypoints:  res.Meta.Entrypoints,
-			FilesScanned: len(res.Files),
-			CacheHit:     res.CacheHit,
-			Truncated:    res.Truncated,
+			Identity:        res.Identity,
+			CommitSHA:       res.CommitSHA,
+			Kind:            string(opts.Source.Kind),
+			Name:            res.Meta.Name,
+			Version:         res.Meta.Version,
+			Description:     res.Meta.Description,
+			Languages:       res.Meta.Languages,
+			Entrypoints:     res.Meta.Entrypoints,
+			EntrypointPaths: res.Meta.EntrypointPaths,
+			FilesScanned:    len(res.Files),
+			CacheHit:        res.CacheHit,
+			Truncated:       res.Truncated,
 		},
 		Evidence:     res.Evidence,
 		Capabilities: caps,
@@ -299,16 +301,18 @@ func buildManifest(src source.Source, goal string, res *inspect.Result, cmp *str
 	}
 
 	m := manifest.Manifest{
-		Schema:       manifest.SchemaID,
-		Name:         capabilityName(res, src),
-		Version:      "1",
-		Source:       src.Canonical,
-		Goal:         goal,
-		Capabilities: names,
+		Schema:   manifest.SchemaID,
+		Name:     capabilityName(res, src),
+		Version:  "1",
+		Source:   src.Canonical,
+		Goal:     goal,
+		Strategy: string(cmp.Recommended),
+		Support:  manifest.SupportPlanOnly,
+		Status:   "planned",
 		Execution: manifest.Execution{
-			Strategy:  string(cmp.Recommended),
-			JSONIO:    true,
-			Supported: supported,
+			// Part 1 never produces a runnable capability.
+			Type:      manifest.ExecutionNone,
+			Supported: false,
 			Note:      note,
 		},
 		Grokbot: manifest.Grokbot{
@@ -317,12 +321,14 @@ func buildManifest(src source.Source, goal string, res *inspect.Result, cmp *str
 			OnFailure: "run grokinstall doctor",
 		},
 		Cache: manifest.Cache{
-			Enabled:     true,
+			// Inspection is cached; capability execution is not.
+			Enabled:     false,
 			Key:         res.Identity,
-			Description: "inspection is cached by source identity and commit",
+			Description: "inspection is cached by source identity and commit; capability results are not cached",
 		},
 		Security: manifest.Security{
 			ExecutesSourceCode: false,
+			OwnedByGrokinstall: false,
 			Notes:              securityNotes(res, cmp),
 		},
 		Provenance: manifest.Provenance{
@@ -333,6 +339,7 @@ func buildManifest(src source.Source, goal string, res *inspect.Result, cmp *str
 			Evidence:    trimEvidence(res.Evidence, 30),
 		},
 	}
+	_ = names
 	_ = needs
 	return m
 }
