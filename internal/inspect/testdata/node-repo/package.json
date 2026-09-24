@@ -1,0 +1,12 @@
+{
+  "name": "node-widget",
+  "version": "1.2.3",
+  "description": "A widget tool",
+  "type": "module",
+  "bin": { "widget": "bin/widget.js" },
+  "scripts": {
+    "test": "node test/widget.test.js",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "dependencies": { "chalk": "^5.0.0" }
+}

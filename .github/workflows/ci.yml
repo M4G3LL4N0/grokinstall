@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ["1.24", "1.25"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Test with race detector
+        run: go test -race ./...
+
+  network:
+    name: live public source inspection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Inspect a public GitHub repository
+        run: go test ./internal/inspect/ -run TestPublicGitHubSource -v
+        env:
+          GROKINSTALL_NETWORK_TESTS: "1"
+
+  dogfood:
+    name: dogfood
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Build the CLI
+        run: go build -o bin/grokinstall-bin ./cmd/grokinstall
+      - name: Doctor
+        run: ./bin/grokinstall-bin doctor
+      - name: Inspect itself
+        run: ./bin/grokinstall-bin inspect .
+      - name: Plan a capability for itself
+        run: ./bin/grokinstall-bin plan . --goal "Allow GrokBot to diagnose GrokInstall"
+      - name: Compare strategies
+        run: ./bin/grokinstall-bin compare . --goal "Allow GrokBot to diagnose GrokInstall"

@@ -1,0 +1,8 @@
+#!/bin/sh
+# GrokInstall launcher: prefers an installed binary, falls back to `go run`.
+set -e
+dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -x "$dir/bin/grokinstall-bin" ]; then
+  exec "$dir/bin/grokinstall-bin" "$@"
+fi
+exec go run "$dir/cmd/grokinstall" "$@"

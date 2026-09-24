@@ -1,0 +1,6 @@
+{
+  "name": "local-service",
+  "version": "0.1.0",
+  "description": "A long-running local service",
+  "scripts": { "start": "node server.js" }
+}

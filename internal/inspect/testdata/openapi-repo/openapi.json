@@ -1,0 +1,9 @@
+{
+  "openapi": "3.0.0",
+  "info": { "title": "Fixture API", "version": "1.0.0" },
+  "paths": {
+    "/widgets": { "get": { "summary": "list widgets" } },
+    "/widgets/{id}": { "get": { "summary": "get widget" } },
+    "/health": { "get": { "summary": "health" } }
+  }
+}

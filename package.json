@@ -1,0 +1,16 @@
+{
+  "name": "grokinstall",
+  "version": "0.1.0",
+  "description": "Universal installation intelligence for GrokBot: inspect any source, compare integration strategies, and install the capability instead of the complexity",
+  "type": "module",
+  "bin": { "grokinstall": "bin/grokinstall" },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/grokinstall/grokinstall" },
+  "keywords": ["grokbot", "integration", "installer", "mcp", "cli", "agent"],
+  "scripts": {
+    "build": "go build -o bin/grokinstall ./cmd/grokinstall",
+    "test": "go test ./...",
+    "vet": "go vet ./...",
+    "check": "go vet ./... && go test ./..."
+  }
+}

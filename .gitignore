@@ -1,0 +1,5 @@
+/grokinstall
+/dist/
+bin/grokinstall-bin
+*.test
+*.out
