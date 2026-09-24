@@ -94,6 +94,7 @@ func Run(stateDir string, profile *toolchain.Profile) *Report {
 		add(checkConfig(reg))
 		add(checkRegistry(reg))
 		add(checkDirs(reg))
+		runStateChecks(reg, rep)
 	} else {
 		add(Check{Name: "state_dir", Status: StatusFail, Required: true,
 			Detail: regErr.Error(), Action: "choose a writable state directory (set GROKINSTALL_HOME)"})

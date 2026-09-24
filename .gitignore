@@ -3,3 +3,6 @@
 bin/grokinstall-bin
 *.test
 *.out
+
+# stray temp files from interrupted tooling
+_tmp_*

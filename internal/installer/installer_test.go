@@ -5,12 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"grokinstall/internal/inspect"
 	"grokinstall/internal/manifest"
 	"grokinstall/internal/receipt"
 	"grokinstall/internal/registry"
+	"grokinstall/internal/toolchain"
 )
 
 // --- fixtures ---------------------------------------------------------------
@@ -52,13 +54,25 @@ func write(t *testing.T, dir, rel, body string) {
 	}
 }
 
+// sharedProfile is detected once: probing the toolchain is the same for every
+// installer in this process.
+var (
+	sharedProfileOnce sync.Once
+	sharedProfile     *toolchain.Profile
+)
+
+func testProfile() *toolchain.Profile {
+	sharedProfileOnce.Do(func() { sharedProfile = toolchain.Detect() })
+	return sharedProfile
+}
+
 func newInstaller(t *testing.T) *Installer {
 	t.Helper()
 	reg, err := registry.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(reg)
+	return NewWithProfile(reg, testProfile())
 }
 
 func localSource(t *testing.T, dir string) sourceRef {
@@ -280,7 +294,7 @@ func TestNoInstallIsAFirstClassResult(t *testing.T) {
 	}
 }
 
-func TestPlanOnlyStrategyIsRegisteredButNotRunnable(t *testing.T) {
+func TestPlanOnlyStrategyIsPersistedAsAPlanNotAnInstall(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "openapi.json", `{"openapi":"3.0.0","info":{"title":"x","version":"1"},"servers":[{"url":"https://api.example.com"}],"paths":{"/widgets":{"get":{"summary":"list"}}}}`)
 	write(t, dir, "README.md", "# api\n\nAn HTTP API.\n")
@@ -292,28 +306,36 @@ func TestPlanOnlyStrategyIsRegisteredButNotRunnable(t *testing.T) {
 	if res.Strategy != "api_bridge" {
 		t.Fatalf("strategy = %q, want api_bridge", res.Strategy)
 	}
-	entry, _ := ins.Registry.Lookup(res.Capability)
-	m, err := manifest.Load(entry.ManifestPath)
+	// A plan is not an installed capability: nothing is registered.
+	if ins.Registry.Has(res.Capability) {
+		t.Fatal("a plan-only strategy must not be registered as an installed capability")
+	}
+	entries, _ := ins.Registry.List()
+	if len(entries) != 0 {
+		t.Fatalf("registry must stay empty for a plan: %+v", entries)
+	}
+	// The plan is persisted so the decision is not lost.
+	if res.PlanPath == "" {
+		t.Fatal("a plan should be persisted outside the capability registry")
+	}
+	plans, err := ins.Registry.Plans()
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("plans = %+v err = %v", plans, err)
+	}
+	if plans[0].Strategy != "api_bridge" || plans[0].State != registry.StatePlanOnly {
+		t.Fatalf("plan = %+v", plans[0])
+	}
+	// The receipt records a planned outcome, not an installed one.
+	r, err := receipt.Load(res.ReceiptPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Runnable() {
-		t.Fatal("an unimplemented strategy must not be registered as runnable")
+	if r.Result != receipt.ResultPlanned {
+		t.Fatalf("receipt result = %q, want planned", r.Result)
 	}
-	if m.Support != manifest.SupportPlanOnly {
-		t.Fatalf("support = %q, want plan_only", m.Support)
-	}
-	// Running a plan-only capability returns a structured refusal, not a
-	// fabricated success and not a crash.
-	out, rerr := ins.Run(res.Capability, json.RawMessage(`{}`))
-	if rerr != nil {
-		t.Fatalf("a plan-only capability should refuse structurally, not error out: %v", rerr)
-	}
-	if out.OK {
-		t.Fatal("running a plan-only capability must not report success")
-	}
-	if out.Error == nil || out.Error.Code != "not_executable" {
-		t.Fatalf("expected a not_executable refusal, got %+v", out.Error)
+	// And it cannot be run, because it is not installed.
+	if _, rerr := ins.Run(res.Capability, json.RawMessage(`{}`)); rerr == nil {
+		t.Fatal("a plan-only capability is not registered and therefore not runnable")
 	}
 }
 

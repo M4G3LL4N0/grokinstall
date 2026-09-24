@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"grokinstall/internal/cache"
 )
@@ -50,27 +51,48 @@ type Verification struct {
 	Output    string  `json:"output_sample,omitempty"`
 }
 
+// Provisioning records what was done to obtain an executable. It is the record
+// that makes provisioning reversible and auditable. It never contains secrets.
+type Provisioning struct {
+	Method            string            `json:"method"`
+	ArtifactSource    string            `json:"artifact_source,omitempty"`
+	ArtifactVersion   string            `json:"artifact_version,omitempty"`
+	Asset             string            `json:"asset,omitempty"`
+	PublishedChecksum string            `json:"published_checksum,omitempty"`
+	ActualChecksum    string            `json:"actual_checksum,omitempty"`
+	ChecksumStatus    string            `json:"checksum_status,omitempty"`
+	BuildCommand      []string          `json:"build_command,omitempty"`
+	RuntimeDir        string            `json:"runtime_dir,omitempty"`
+	Ownership         string            `json:"ownership,omitempty"`
+	PackageMutations  []string          `json:"package_manager_mutations,omitempty"`
+	Approvals         []string          `json:"security_approvals,omitempty"`
+	Notes             []string          `json:"notes,omitempty"`
+	Checksums         map[string]string `json:"runtime_checksums,omitempty"`
+}
+
 // Receipt is the record of one mutating install.
 type Receipt struct {
-	Schema            string       `json:"schema"`
-	InstallID         string       `json:"install_id"`
-	Timestamp         string       `json:"timestamp"`
-	Source            string       `json:"source"`
-	SourceID          string       `json:"source_id,omitempty"`
-	CommitSHA         string       `json:"source_commit,omitempty"`
-	Goal              string       `json:"goal,omitempty"`
-	Strategy          string       `json:"strategy"`
-	Support           string       `json:"support,omitempty"`
-	Capability        string       `json:"capability,omitempty"`
-	FilesCreated      []FileChange `json:"files_created,omitempty"`
-	FilesModified     []FileChange `json:"files_modified,omitempty"`
-	CommandsExecuted  []Command    `json:"commands_executed,omitempty"`
-	DependenciesAdded []string     `json:"dependencies_introduced"`
-	Verification      Verification `json:"verification"`
-	Result            string       `json:"result"`
-	Warnings          []string     `json:"warnings,omitempty"`
-	UninstalledAt     string       `json:"uninstalled_at,omitempty"`
-	UninstallID       string       `json:"uninstall_id,omitempty"`
+	Schema            string        `json:"schema"`
+	InstallID         string        `json:"install_id"`
+	Timestamp         string        `json:"timestamp"`
+	Source            string        `json:"source"`
+	SourceID          string        `json:"source_id,omitempty"`
+	CommitSHA         string        `json:"source_commit,omitempty"`
+	Goal              string        `json:"goal,omitempty"`
+	Strategy          string        `json:"strategy"`
+	Support           string        `json:"support,omitempty"`
+	Capability        string        `json:"capability,omitempty"`
+	State             string        `json:"state,omitempty"`
+	FilesCreated      []FileChange  `json:"files_created,omitempty"`
+	FilesModified     []FileChange  `json:"files_modified,omitempty"`
+	CommandsExecuted  []Command     `json:"commands_executed,omitempty"`
+	DependenciesAdded []string      `json:"dependencies_introduced"`
+	Provisioning      *Provisioning `json:"provisioning,omitempty"`
+	Verification      Verification  `json:"verification"`
+	Result            string        `json:"result"`
+	Warnings          []string      `json:"warnings,omitempty"`
+	UninstalledAt     string        `json:"uninstalled_at,omitempty"`
+	UninstallID       string        `json:"uninstall_id,omitempty"`
 }
 
 // Results a receipt can carry.
@@ -80,6 +102,7 @@ const (
 	ResultNoInstall = "no_install"
 	ResultFailed    = "failed"
 	ResultUninstall = "uninstalled"
+	ResultDirty     = "dirty"
 )
 
 // Validate checks receipt invariants. A receipt may never claim a successful
@@ -105,6 +128,13 @@ func (r *Receipt) Validate() error {
 	}
 	if r.Result == ResultPlanned && !r.Verification.Passed {
 		return fmt.Errorf("a planned receipt requires a passing manifest validation")
+	}
+	if r.Result == ResultDirty && r.State == "" {
+		return fmt.Errorf("a dirty receipt must record the state that could not be rolled back")
+	}
+	// A receipt must never carry secret material: it is long-lived audit data.
+	if r.Provisioning != nil && containsSecretLike(r.Provisioning.Approvals) {
+		return fmt.Errorf("receipt provisioning data looks like it contains credentials")
 	}
 	return nil
 }
@@ -147,4 +177,18 @@ func Load(path string) (*Receipt, error) {
 // FindByInstallID looks up a receipt inside a receipts directory.
 func FindByInstallID(dir, installID string) (*Receipt, error) {
 	return Load(filepath.Join(dir, installID+".json"))
+}
+
+// containsSecretLike is a cheap guard so a provisioning note can never become a
+// place where a token is written down.
+func containsSecretLike(values []string) bool {
+	for _, v := range values {
+		lower := strings.ToLower(v)
+		for _, marker := range []string{"ghp_", "sk-", "bearer ", "password=", "token="} {
+			if strings.Contains(lower, marker) {
+				return true
+			}
+		}
+	}
+	return false
 }

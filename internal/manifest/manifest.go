@@ -16,6 +16,7 @@ import (
 
 	"grokinstall/internal/cache"
 	"grokinstall/internal/evidence"
+	"grokinstall/internal/redact"
 )
 
 // SchemaID identifies the manifest schema.
@@ -232,6 +233,9 @@ func (m *Manifest) CallLine() string {
 // mechanically from the manifest. It never contains repository paths, source
 // files or documentation text.
 func (m *Manifest) ContractText() string {
+	// The contract is handed to a model, so it is redacted defensively even
+	// though it is built from manifest metadata rather than source text.
+	m = redactedCopy(m)
 	var b strings.Builder
 	fmt.Fprintf(&b, "CAPABILITY\n%s\n\n", m.Name)
 	fmt.Fprintf(&b, "USE WHEN\n%s\n\n", orDefault(m.Grokbot.UseWhen, "the described operation is requested"))
@@ -307,6 +311,29 @@ func truncate(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
+}
+
+// redactedCopy returns a copy of the manifest with secret-shaped text removed
+// from every field that can reach a contract.
+func redactedCopy(m *Manifest) *Manifest {
+	c := *m
+	c.Grokbot.UseWhen = redact.String(c.Grokbot.UseWhen)
+	c.Grokbot.DoNot = redact.String(c.Grokbot.DoNot)
+	c.Grokbot.OnFailure = redact.String(c.Grokbot.OnFailure)
+	c.Goal = redact.String(c.Goal)
+	fields := make([]Field, len(c.Input.Fields))
+	for i, f := range c.Input.Fields {
+		f.Description = redact.String(f.Description)
+		fields[i] = f
+	}
+	c.Input.Fields = fields
+	outs := make([]Field, len(c.Output.Fields))
+	for i, f := range c.Output.Fields {
+		f.Description = redact.String(f.Description)
+		outs[i] = f
+	}
+	c.Output.Fields = outs
+	return &c
 }
 
 func orDefault(v, fallback string) string {

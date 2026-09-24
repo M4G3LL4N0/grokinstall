@@ -9,6 +9,7 @@ import (
 
 	"grokinstall/internal/capability"
 	"grokinstall/internal/evidence"
+	"grokinstall/internal/redact"
 	"grokinstall/internal/source"
 )
 
@@ -53,6 +54,9 @@ func (p *Pack) WithMetadata(key, value string) *Pack {
 	if p.SourceMetadata == nil {
 		p.SourceMetadata = map[string]string{}
 	}
+	// Redact first so the shape of the text survives: a reader still sees
+	// which variable was involved, never its value.
+	value = redact.String(value)
 	if len(value) > MaxMetadataValueBytes {
 		value = value[:MaxMetadataValueBytes]
 	}
@@ -60,10 +64,25 @@ func (p *Pack) WithMetadata(key, value string) *Pack {
 	return p
 }
 
-// WithEvidence adds inspection evidence.
+// WithEvidence adds inspection evidence. Evidence text is redacted before it
+// enters the pack, so a repository that prints a token in a diagnostic string
+// cannot smuggle it into a model context.
 func (p *Pack) WithEvidence(items []evidence.Item) *Pack {
-	p.ManifestEvidence = items
+	safe := make([]evidence.Item, 0, len(items))
+	for _, it := range items {
+		it.Evidence, _ = redact.RedactAll(it.Evidence)
+		safe = append(safe, it)
+	}
+	p.ManifestEvidence = safe
 	return p
+}
+
+// WithSourceMetadataFiltered adds metadata only when it is safe to carry.
+func (p *Pack) WithSourceMetadataFiltered(key, value string) *Pack {
+	if redact.ContainsSecret(value) {
+		return p.WithMetadata(key, "[redacted: source metadata contains secret material]")
+	}
+	return p.WithMetadata(key, value)
 }
 
 // WithCapabilities adds discovered capabilities.
@@ -99,12 +118,18 @@ func (p Pack) MarshalJSON() ([]byte, error) {
 	if out.SourceMetadata != nil {
 		bounded := make(map[string]string, len(out.SourceMetadata))
 		for k, v := range out.SourceMetadata {
+			v = redact.String(v)
 			if len(v) > MaxMetadataValueBytes {
 				v = v[:MaxMetadataValueBytes]
 			}
 			bounded[k] = v
 		}
 		out.SourceMetadata = bounded
+	}
+	if out.Constraints != nil {
+		clean := make([]string, len(out.Constraints))
+		clean, _ = redact.RedactAll(out.Constraints)
+		out.Constraints = clean
 	}
 	return json.Marshal(out)
 }

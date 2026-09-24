@@ -13,6 +13,7 @@ import (
 
 	"grokinstall/internal/installer"
 	"grokinstall/internal/manifest"
+	"grokinstall/internal/provision"
 	"grokinstall/internal/receipt"
 	"grokinstall/internal/registry"
 	"grokinstall/internal/source"
@@ -30,12 +31,16 @@ func (g *globalFlags) installerFor() (*installer.Installer, *registry.Registry, 
 
 func newInstallCommand(g *globalFlags) *cobra.Command {
 	var (
-		goal      string
-		name      string
-		command   string
-		dryRun    bool
-		replace   bool
-		timeoutMs int
+		goal          string
+		name          string
+		command       string
+		dryRun        bool
+		replace       bool
+		timeoutMs     int
+		provisionMode string
+		allowScripts  bool
+		allowSystem   bool
+		allowBuild    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install SOURCE --goal \"...\"",
@@ -55,8 +60,27 @@ func newInstallCommand(g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			mode, valid := provision.ParseMode(provisionMode)
+			if !valid {
+				return fmt.Errorf("invalid --provision value %q: use safe, never or prompt", provisionMode)
+			}
+			// Approvals are specific to a risk class. There is deliberately no
+			// generic --yes that would authorize all of them at once.
+			var allow []provision.Authorization
+			if allowScripts {
+				allow = append(allow, provision.AuthInstallScripts)
+			}
+			if allowSystem {
+				allow = append(allow, provision.AuthSystemPackageManager)
+			}
+			if allowBuild {
+				allow = append(allow, provision.AuthSourceBuild)
+			}
+			policy := provision.Policy{Mode: mode, Allow: allow}
+
 			start := time.Now()
 			res, err := ins.Install(installer.Options{
+				Policy:       policy,
 				Source:       *src,
 				Goal:         goal,
 				Name:         name,
@@ -77,6 +101,10 @@ func newInstallCommand(g *globalFlags) *cobra.Command {
 					})
 					if !g.jsonOutput {
 						renderInstall(cmd.OutOrStdout(), res)
+						if res.Refusal != nil {
+							renderRefusal(cmd.OutOrStdout(), res.Refusal)
+						}
+						renderProvisioningCandidates(cmd.OutOrStdout(), ins.LastCandidates, ins.LastSelected.Method)
 					}
 				}
 				return err
@@ -103,6 +131,10 @@ func newInstallCommand(g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing state")
 	cmd.Flags().BoolVar(&replace, "replace", false, "replace an existing capability of the same name")
 	cmd.Flags().IntVar(&timeoutMs, "timeout-ms", 0, "per-call timeout for the installed capability")
+	cmd.Flags().StringVar(&provisionMode, "provision", "safe", "provisioning policy: safe, never or prompt")
+	cmd.Flags().BoolVar(&allowScripts, "allow-install-scripts", false, "authorize package lifecycle scripts to execute")
+	cmd.Flags().BoolVar(&allowSystem, "allow-system-package-manager", false, "authorize machine-wide package changes")
+	cmd.Flags().BoolVar(&allowBuild, "allow-source-build", false, "authorize compiling untrusted source")
 	return cmd
 }
 
@@ -153,6 +185,18 @@ func renderInstall(w io.Writer, res *installer.Result) {
 		fmt.Fprintf(w, "Source: %s\n", res.Source)
 		fmt.Fprintf(w, "Goal:   %s\n", res.Goal)
 		fmt.Fprintf(w, "Why:    %s\n", res.Explanation)
+	case receipt.ResultPlanned:
+		fmt.Fprintf(w, "Planned only: %s\n", res.Strategy)
+		fmt.Fprintf(w, "This strategy is detected and compared, but it is not runnable in this version.\n")
+		fmt.Fprintf(w, "Nothing was registered: a plan is not an installed capability.\n")
+		if res.PlanPath != "" {
+			fmt.Fprintf(w, "Plan saved: %s\n", res.PlanPath)
+		}
+	case receipt.ResultDirty:
+		fmt.Fprintf(w, "Installation left DIRTY state: rollback could not be completed.\n\n")
+		fmt.Fprintf(w, "Source: %s\n", res.Source)
+		fmt.Fprintf(w, "Reason: %s\n", res.Explanation)
+		fmt.Fprintf(w, "\nRun: grokinstall doctor\n")
 	case receipt.ResultFailed:
 		fmt.Fprintf(w, "Installation failed: nothing was registered.\n\n")
 		fmt.Fprintf(w, "Source:   %s\n", res.Source)
@@ -174,11 +218,6 @@ func renderInstall(w io.Writer, res *installer.Result) {
 			fmt.Fprintf(w, "\nReceipt: %s (kept for audit)\n", res.ReceiptPath)
 		}
 		fmt.Fprintf(w, "\nNo upstream files were changed.\n")
-	case receipt.ResultPlanned:
-		fmt.Fprintf(w, "Planned only: %s\n", res.Capability)
-		fmt.Fprintf(w, "\nStrategy: %s (%s)\n", res.Strategy, res.Support)
-		fmt.Fprintf(w, "This capability is registered as a plan and cannot be run yet.\n")
-		fmt.Fprintf(w, "Manifest: %s\n", res.ManifestPath)
 	default:
 		fmt.Fprintf(w, "Installed: %s\n\n", res.Capability)
 		fmt.Fprintf(w, "Strategy:    %s (%s)\n", res.Strategy, res.Support)
@@ -186,6 +225,32 @@ func renderInstall(w io.Writer, res *installer.Result) {
 		fmt.Fprintf(w, "Manifest:    %s\n", res.ManifestPath)
 		if res.AdapterPath != "" {
 			fmt.Fprintf(w, "Adapter:     %s\n", res.AdapterPath)
+		}
+		if res.RuntimeDir != "" {
+			fmt.Fprintf(w, "Runtime:     %s (GrokInstall-owned)\n", res.RuntimeDir)
+		}
+		if res.ProvisioningDetail != nil {
+			d := res.ProvisioningDetail
+			fmt.Fprintf(w, "\nProvisioning\n")
+			fmt.Fprintf(w, "  method:    %s\n", d.Method)
+			if d.ArtifactSource != "" {
+				fmt.Fprintf(w, "  source:    %s\n", d.ArtifactSource)
+			}
+			if d.ArtifactVersion != "" {
+				fmt.Fprintf(w, "  version:   %s\n", d.ArtifactVersion)
+			}
+			if d.Asset != "" {
+				fmt.Fprintf(w, "  asset:     %s\n", d.Asset)
+			}
+			if d.ChecksumStatus != "" {
+				fmt.Fprintf(w, "  checksum:  %s\n", d.ChecksumStatus)
+			}
+			if d.ActualChecksum != "" {
+				fmt.Fprintf(w, "  hash:      %s\n", d.ActualChecksum[:min(16, len(d.ActualChecksum))])
+			}
+			for _, n := range d.Notes {
+				fmt.Fprintf(w, "  note:      %s\n", n)
+			}
 		}
 		fmt.Fprintf(w, "Receipt:     %s\n", res.ReceiptPath)
 		if res.Verification.Passed {
@@ -218,6 +283,13 @@ func contractFor(res *installer.Result) string {
 		return ""
 	}
 	return m.ContractText()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func orNone(list []string) string {
@@ -382,9 +454,9 @@ func newListCommand(g *globalFlags) *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintf(tw, "NAME\tSTRATEGY\tSUPPORT\tSTATUS\n")
+			fmt.Fprintf(tw, "NAME\tSTRATEGY\tSUPPORT\tSTATE\tSTATUS\n")
 			for _, c := range caps {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", c.Name, c.Strategy, c.Support, c.Status)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", c.Name, c.Strategy, c.Support, c.State, c.Status)
 			}
 			return tw.Flush()
 		},
@@ -473,7 +545,9 @@ func fieldNames(fields []manifest.Field) string {
 }
 
 func newCapabilitiesCommand(g *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var all bool
+	var state string
+	cmd := &cobra.Command{
 		Use:   "capabilities",
 		Short: "Enumerate callable capabilities for GrokBot",
 		Long: "Lists installed capabilities with their input and output contracts.\n" +
@@ -489,26 +563,53 @@ func newCapabilitiesCommand(g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// By default only runnable capabilities are offered, so GrokBot is
+			// never handed something it cannot call.
+			visible := caps
+			if !all {
+				runnable := []installer.CapabilitySummary{}
+				for _, c := range caps {
+					if c.Runnable {
+						runnable = append(runnable, c)
+					}
+				}
+				visible = runnable
+			}
+			if state != "" {
+				visible = capabilityStates(visible, state)
+			}
 			g.recordUsage(reg, usage.Event{Op: usage.OpCapabilities})
 			if g.jsonOutput {
-				return writeJSON(cmd, map[string]any{"capabilities": caps})
+				return writeJSON(cmd, map[string]any{
+					"capabilities": visible,
+					"total":        len(caps),
+					"shown":        len(visible),
+				})
 			}
-			if len(caps) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No capabilities installed.")
+			if len(visible) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No runnable capabilities installed.")
+				if len(caps) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "%d installed capability(ies) are not runnable; see: grokinstall capabilities --all\n", len(caps))
+				}
 				return nil
 			}
-			for _, c := range caps {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", c.Name)
+			for _, c := range visible {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s  [%s]\n", c.Name, c.State)
 				if c.Description != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", c.Description)
 				}
 				if c.Call != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "  call: %s\n", c.Call)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "  not runnable: %s\n", c.Support)
 				}
 			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "include capabilities that are not runnable")
+	cmd.Flags().StringVar(&state, "state", "", "filter by lifecycle state (ready, broken, dirty)")
+	return cmd
 }
 
 func newGrokbotCommand(g *globalFlags) *cobra.Command {

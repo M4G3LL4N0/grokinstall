@@ -15,12 +15,12 @@ package installer
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"grokinstall/internal/cache"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +32,8 @@ import (
 	"grokinstall/internal/knowledge"
 	"grokinstall/internal/manifest"
 	"grokinstall/internal/plan"
+	"grokinstall/internal/provision"
+	"grokinstall/internal/provision/github"
 	"grokinstall/internal/receipt"
 	"grokinstall/internal/registry"
 	"grokinstall/internal/runtime"
@@ -64,6 +66,8 @@ type Options struct {
 	// AllowReplace permits replacing an existing capability of the same name.
 	AllowReplace bool
 	TimeoutMs    int
+	// Policy governs provisioning. Zero value means the safe policy.
+	Policy ProvisionPolicy
 }
 
 // PlannedAction is one mutation an install would perform.
@@ -91,14 +95,29 @@ type Result struct {
 	Goal               string               `json:"goal,omitempty"`
 	ManifestPath       string               `json:"manifest_path,omitempty"`
 	AdapterPath        string               `json:"adapter_path,omitempty"`
+	RuntimeDir         string               `json:"runtime_dir,omitempty"`
 	ReceiptPath        string               `json:"receipt_path,omitempty"`
+	PlanPath           string               `json:"plan_path,omitempty"`
 	Warnings           []string             `json:"warnings,omitempty"`
 	Explanation        string               `json:"explanation,omitempty"`
 	InspectionCacheHit bool                 `json:"inspection_cache_hit"`
 	PlannedActions     PlannedAction        `json:"planned_actions,omitempty"`
 	Verification       receipt.Verification `json:"verification,omitempty"`
 	Receipt            *receipt.Receipt     `json:"receipt,omitempty"`
+	// Provisioning records what provisioning was considered or performed.
+	Provisioning       string                `json:"provisioning,omitempty"`
+	Provisioned        bool                  `json:"provisioned,omitempty"`
+	ProvisioningDetail *receipt.Provisioning `json:"provisioning_detail,omitempty"`
+	ChecksumStatus     string                `json:"checksum_status,omitempty"`
+	// Refusal is set when provisioning was blocked by policy.
+	Refusal *Refusal `json:"refusal,omitempty"`
+	// provisionResult carries the in-process provisioning result to commit. It
+	// is never serialized: the receipt and runtime metadata are the records.
+	provisionResult *provision.Result
 }
+
+// Refusal is the structured reason provisioning did not proceed.
+type Refusal = provision.Refusal
 
 // RunResult is the outcome of invoking a capability.
 type RunResult struct {
@@ -128,6 +147,7 @@ type CapabilitySummary struct {
 	Description string          `json:"description"`
 	Strategy    string          `json:"strategy"`
 	Support     string          `json:"support"`
+	State       string          `json:"state"`
 	Status      string          `json:"status"`
 	Runnable    bool            `json:"runnable"`
 	UseWhen     string          `json:"use_when,omitempty"`
@@ -142,11 +162,41 @@ type Installer struct {
 	Registry *registry.Registry
 	Profile  *toolchain.Profile
 	rt       *runtime.Runtime
+	// GitHub reads release metadata during provisioning.
+	GitHub *github.Client
+	// LastCandidates records the provisioning routes considered by the most
+	// recent install, so a refusal can explain itself.
+	LastCandidates []provision.Candidate
+	// LastSelected records the chosen route, when one was selected.
+	LastSelected provision.Candidate
 }
 
 // New builds an installer over a registry.
 func New(reg *registry.Registry) *Installer {
-	return &Installer{Registry: reg, Profile: toolchain.Detect(), rt: runtime.New()}
+	return NewWithProfile(reg, toolchain.Detect())
+}
+
+// NewWithProfile builds an installer with an already-detected toolchain, so a
+// caller that creates several installers does not re-probe the machine.
+func NewWithProfile(reg *registry.Registry, profile *toolchain.Profile) *Installer {
+	if profile == nil {
+		profile = toolchain.Detect()
+	}
+	return &Installer{Registry: reg, Profile: profile, rt: runtime.New()}
+}
+
+// WithGitHubClient supplies the release client used for provisioning. It exists
+// so tests can point at a local server.
+func (ins *Installer) WithGitHubClient(c *github.Client) *Installer {
+	ins.GitHub = c
+	return ins
+}
+
+// ensureGitHub lazily builds the default client.
+func (ins *Installer) ensureGitHub() {
+	if ins.GitHub == nil {
+		ins.GitHub = github.NewClient("")
+	}
 }
 
 // strategySupport declares the honest runtime support of every strategy.
@@ -172,6 +222,13 @@ func SupportFor(id strategy.ID) manifest.Support {
 }
 
 // Install runs the full staged installation.
+// Install runs the full staged installation.
+//
+// The transaction is: plan -> provision stage -> adapter stage -> manifest
+// stage -> verify -> commit files -> register -> write receipt. A failure
+// before the commit phase leaves nothing behind but a failed receipt. A failure
+// during commit is rolled back; if the rollback cannot be proven complete the
+// capability is marked dirty and the install is never reported as successful.
 func (ins *Installer) Install(opts Options) (*Result, error) {
 	if opts.Source.Kind != source.KindLocalDir && opts.Source.Kind != source.KindGitHub {
 		return nil, fmt.Errorf("source kind %q is not supported for installation", opts.Source.Kind)
@@ -205,6 +262,9 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 			"this source is GrokInstall itself; use doctor and diagnosis rather than installing a second copy")
 	}
 
+	tx := &transaction{registryDir: ins.Registry.Root}
+	tx.advance(phasePlan)
+
 	// no_install is a successful outcome with nothing registered.
 	if chosen == strategy.StrategyNoInstall {
 		res.Result = receipt.ResultNoInstall
@@ -221,18 +281,6 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 		return res, nil
 	}
 
-	name := chooseName(opts, built)
-	res.Capability = name
-
-	actions, m := ins.buildManifest(opts, built, name, chosen, support)
-	res.PlannedActions = actions
-
-	if opts.DryRun {
-		res.Result = "dry_run"
-		res.Explanation = "Dry run: no files, registry entries or receipts were written."
-		return res, nil
-	}
-
 	// Self-installation is refused rather than duplicated.
 	if built.IsSelf {
 		res.Result = receipt.ResultFailed
@@ -244,7 +292,6 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 		return res, fmt.Errorf("refusing to install GrokInstall into itself: %s", res.Explanation)
 	}
 
-	// STAGE
 	stageDir := ins.Registry.StagingPath(res.InstallID)
 	if err := os.RemoveAll(stageDir); err != nil {
 		return nil, err
@@ -252,23 +299,91 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 	if err := os.MkdirAll(stageDir, 0o755); err != nil {
 		return nil, err
 	}
+
+	// PROVISION STAGE: obtain the executable before the manifest is built, so
+	// the manifest always describes something that really exists.
+	if chosen == strategy.StrategyCLIBridge || chosen == strategy.StrategyExternalExecution {
+		if ins.needsProvisioning(opts, built) {
+			ins.ensureGitHub()
+			need, _ := provisioningNeed(opts.Source, built.Inspection.Entrypoints, built.Inspection.Name, opts.Command)
+			need.Version = built.Inspection.CommitSHA
+			need.Ecosystem = ecosystemFromEvidence(built)
+			provResult, refusal, perr := ins.provisionExecutable(context.Background(), need, opts.Policy, stageDir)
+			if perr != nil {
+				os.RemoveAll(stageDir)
+				res.Result = receipt.ResultFailed
+				res.Explanation = perr.Error()
+				r, _ := ins.writeReceipt(res, built, receipt.Receipt{
+					Result: receipt.ResultFailed, DependenciesAdded: []string{},
+				})
+				res.Receipt = r
+				return res, perr
+			}
+			if refusal != nil {
+				// A refusal is a first-class outcome: explain it, record a plan,
+				// register nothing, and leave persistent state clean.
+				os.RemoveAll(stageDir)
+				res.Result = receipt.ResultFailed
+				res.Refusal = refusal
+				res.Provisioning = describeCandidates(refusal.Alternatives)
+				res.Explanation = refusal.Reason
+				_, _ = ins.writeReceipt(res, built, receipt.Receipt{
+					Result: receipt.ResultFailed, DependenciesAdded: []string{},
+				})
+				_, _ = ins.Registry.SavePlan(registry.PlanEntry{
+					PlanID: res.InstallID, Source: res.Source, Goal: res.Goal,
+					Strategy: chosen, Support: string(support), State: registry.StatePlanOnly,
+					Reason: refusal.Reason,
+				})
+				res.PlanPath = filepath.Join(ins.Registry.PlansDir(), res.InstallID+".json")
+				return res, refusal
+			}
+			tx.advance(phaseProvision)
+			approvals := applyApprovals(provResult, opts.Policy)
+			res.Provisioned = provResult != nil
+			res.provisionResult = provResult
+			if provResult != nil {
+				res.ProvisioningDetail = provisionReceipt(provResult, approvals)
+				res.ChecksumStatus = provResult.ChecksumStatus
+				if provResult.ExecutablePath != "" {
+					opts.Command = provResult.ExecutablePath
+				}
+			}
+		}
+	}
+
+	name := chooseName(opts, built)
+	res.Capability = name
+
+	actions, m := ins.buildManifest(opts, built, name, chosen, support)
+	res.PlannedActions = actions
+
+	if opts.DryRun {
+		res.Result = "dry_run"
+		res.Explanation = "Dry run: no files, registry entries or receipts were written."
+		if len(ins.LastCandidates) > 0 {
+			res.Provisioning = describeCandidates(ins.LastCandidates)
+		}
+		return res, nil
+	}
+
+	// ADAPTER + MANIFEST STAGE
 	created, err := ins.stage(stageDir, opts, m, built)
 	if err != nil {
 		os.RemoveAll(stageDir)
 		res.Result = receipt.ResultFailed
-		_, _ = ins.writeReceipt(res, built, receipt.Receipt{Result: receipt.ResultFailed, FilesCreated: created})
+		_, _ = ins.writeReceipt(res, built, receipt.Receipt{
+			Result: receipt.ResultFailed, FilesCreated: created, DependenciesAdded: []string{},
+		})
 		return res, err
 	}
+	tx.advance(phaseAdapter)
+	tx.advance(phaseManifest)
 
-	// VERIFY (against staged files, before anything is registered)
+	// VERIFY
 	staged := *m
 	stagedPath := filepath.Join(stageDir, m.Name+".json")
 	verification := ins.verify(&staged, stagedPath, opts)
-	runnable := staged.Runnable()
-
-	// A plan-only capability is registered as a plan, not as an install: it
-	// must validate, but it is not expected to run. This leniency applies only
-	// to strategies that were never promised as runnable.
 	plannedOnly := !support.Executable()
 	if plannedOnly && verification.Passed {
 		verification.Checks = append(verification.Checks, receipt.Check{
@@ -276,8 +391,8 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 			Passed: true,
 			Detail: "strategy " + staged.Strategy + " is " + string(staged.Support) + "; nothing was executed",
 		})
-		verification.Passed = true
 	}
+	tx.advance(phaseVerify)
 
 	if !verification.Passed {
 		os.RemoveAll(stageDir)
@@ -285,10 +400,8 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 		res.Verification = verification
 		res.Explanation = "verification failed; the staged install was discarded and nothing was registered"
 		r, _ := ins.writeReceipt(res, built, receipt.Receipt{
-			Result:            receipt.ResultFailed,
-			FilesCreated:      created,
-			Verification:      verification,
-			CommandsExecuted:  verificationCommands(opts, m),
+			Result: receipt.ResultFailed, FilesCreated: created,
+			Verification: verification, CommandsExecuted: verificationCommands(opts, m),
 			DependenciesAdded: []string{},
 		})
 		res.Receipt = r
@@ -296,168 +409,99 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 	}
 	res.Verification = verification
 
-	// COMMIT
+	// A plan-only strategy is persisted as a plan, never as an installed
+	// capability. This is the installed-versus-planned separation.
+	if plannedOnly {
+		os.RemoveAll(stageDir)
+		explanation := fmt.Sprintf("strategy %s is detected and planned but not runnable in this version", chosen)
+		if err := ins.installPlanOnly(res, chosen, support, explanation); err != nil {
+			return res, err
+		}
+		r, _ := ins.writeReceipt(res, built, receipt.Receipt{
+			Result: receipt.ResultPlanned, State: string(registry.StatePlanOnly),
+			Verification: verification, DependenciesAdded: []string{},
+		})
+		res.Receipt = r
+		return res, nil
+	}
+
+	// COMMIT FILES
 	committed, commitErr := ins.commit(stageDir, stagedPath, opts, built, res, verification)
 	if commitErr != nil {
+		complete, leftovers := tx.rollback()
 		os.RemoveAll(stageDir)
+		res.Result = receipt.ResultFailed
+		if !complete {
+			// Rollback could not prove restoration: say so loudly.
+			res.Result = receipt.ResultDirty
+			res.Explanation = "commit failed and rollback was incomplete: " + strings.Join(leftovers, ", ")
+			_ = ins.markDirty(name, res.Explanation)
+			_, _ = ins.writeReceipt(res, built, receipt.Receipt{
+				Result: receipt.ResultDirty, State: string(registry.StateDirty),
+				Verification: verification, DependenciesAdded: []string{},
+			})
+			return res, fmt.Errorf("%s", res.Explanation)
+		}
+		res.Explanation = "commit failed and was rolled back: " + commitErr.Error()
+		_, _ = ins.writeReceipt(res, built, receipt.Receipt{
+			Result: receipt.ResultFailed, Verification: verification,
+			DependenciesAdded: []string{},
+		})
 		return res, commitErr
 	}
+	tx.advance(phaseCommit)
+	tx.advance(phaseRegister)
 	os.RemoveAll(stageDir)
 
 	res.ManifestPath = committed.manifestPath
 	res.AdapterPath = committed.adapterPath
-	// The receipt records the committed paths, not the staging paths.
+	res.RuntimeDir = committed.runtimeDir
 	created = finalFileChanges(created, stageDir, name, committed)
-	res.Result = receipt.ResultInstalled
-	if !runnable {
-		res.Result = receipt.ResultPlanned
+	// A capability that uses an executable GrokInstall did not provision still
+	// records where that executable came from.
+	if res.ProvisioningDetail == nil && m.Execution.Type == manifest.ExecutionSubprocess {
+		ownership := provision.OwnershipExternal
+		method := provision.MethodExisting
+		if res.RuntimeDir != "" {
+			ownership = provision.OwnershipGrokinstall
+			method = provision.MethodRelease
+		}
+		res.ProvisioningDetail = &receipt.Provisioning{
+			Method:         string(method),
+			ArtifactSource: res.Source,
+			Ownership:      string(ownership),
+			Notes:          []string{"the executable was already present; GrokInstall provisioned nothing"},
+		}
 	}
+	res.Result = receipt.ResultInstalled
 	r, err := ins.writeReceipt(res, built, receipt.Receipt{
-		Result:            res.Result,
-		Capability:        name,
-		FilesCreated:      created,
-		CommandsExecuted:  verificationCommands(opts, m),
-		DependenciesAdded: []string{},
-		Verification:      verification,
+		Result: receipt.ResultInstalled, Capability: name, State: string(registry.StateReady),
+		FilesCreated: created, CommandsExecuted: verificationCommands(opts, m),
+		DependenciesAdded: []string{}, Verification: verification,
+		Provisioning: res.ProvisioningDetail,
 	})
 	if err != nil {
 		return res, err
 	}
 	res.Receipt = r
-	// Record the receipt path on the entry so uninstall and audit can find it.
 	if entry, lerr := ins.Registry.Lookup(name); lerr == nil {
 		entry.ReceiptPath = res.ReceiptPath
 		_ = ins.Registry.Update(entry)
 	}
+	tx.advance(phaseReceipt)
 	return res, nil
 }
 
-// finalFileChanges rewrites staged paths to their committed locations so the
-// receipt describes state a user can actually inspect.
-func finalFileChanges(created []receipt.FileChange, stageDir, name string, committed commitResult) []receipt.FileChange {
-	out := make([]receipt.FileChange, 0, len(created))
-	for _, c := range created {
-		rel := strings.TrimPrefix(c.Path, stageDir+string(filepath.Separator))
-		newPath := committed.manifestPath
-		if rel != name+".json" {
-			if committed.adapterPath == "" {
-				// Nothing was committed for this file; do not claim it exists.
-				continue
-			}
-			rest := strings.TrimPrefix(rel, name+string(filepath.Separator))
-			newPath = filepath.Join(committed.adapterPath, rest)
-		}
-		out = append(out, changeFor(newPath, c.Action, c.Owner))
+// needsProvisioning reports whether an executable must be obtained rather than
+// already being present on the machine.
+func (ins *Installer) needsProvisioning(opts Options, built *plan.Plan) bool {
+	if opts.Command != "" {
+		return false
 	}
-	return out
-}
-
-func failedChecks(v receipt.Verification) []string {
-	var out []string
-	for _, c := range v.Checks {
-		if !c.Passed {
-			out = append(out, c.Name+": "+c.Detail)
-		}
+	if cmd, _ := discoverCommand(built); cmd != "" {
+		return false
 	}
-	return out
-}
-
-func verificationCommands(opts Options, m *manifest.Manifest) []receipt.Command {
-	if m.Execution.Type != manifest.ExecutionSubprocess {
-		return []receipt.Command{}
-	}
-	return []receipt.Command{{
-		Binary: m.Execution.Command,
-		Args:   m.Execution.Args,
-		Reason: "capability smoke test",
-	}}
-}
-
-// chooseName derives a stable capability name from the source and goal.
-func chooseName(opts Options, built *plan.Plan) string {
-	if strings.TrimSpace(opts.Name) != "" {
-		return sanitize(opts.Name)
-	}
-	base := built.Manifest.Name
-	if base == "" || base == "source" {
-		base = "capability"
-	}
-	verb := goalVerb(built.Goal)
-	if verb == "" {
-		verb = defaultVerb(built.Comparison.Recommended)
-	}
-	return sanitize(base + "." + verb)
-}
-
-func defaultVerb(id strategy.ID) string {
-	switch id {
-	case strategy.StrategyKnowledgeImport:
-		return "search"
-	case strategy.StrategyAPIBridge:
-		return "api"
-	case strategy.StrategyMCPBridge:
-		return "mcp"
-	case strategy.StrategyDockerBridge:
-		return "run"
-	case strategy.StrategyLocalService:
-		return "call"
-	default:
-		return "cli"
-	}
-}
-
-// goalVerb picks a capability verb from the user's goal, deterministically.
-func goalVerb(goal string) string {
-	lower := strings.ToLower(goal)
-	table := []struct{ verb, keywords string }{
-		{"search", "search find query lookup look up"},
-		{"docs", "documentation docs readme guide manual reference"},
-		{"security", "security audit vulnerability"},
-		{"diagnose", "diagnose debug troubleshoot"},
-		{"review", "review inspect analyse analyze check"},
-		{"convert", "convert transform format"},
-		{"api", "api endpoint rest http"},
-		{"run", "run execute invoke start"},
-	}
-	for _, entry := range table {
-		for _, kw := range strings.Fields(entry.keywords) {
-			if strings.Contains(lower, kw) {
-				return entry.verb
-			}
-		}
-	}
-	return ""
-}
-
-func sanitize(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '.', r == '-', r == '_':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-._")
-	if out == "" {
-		return "capability"
-	}
-	if len(out) > 64 {
-		out = out[:64]
-	}
-	return out
-}
-
-func newInstallID() string {
-	buf := make([]byte, 6)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("gi_%d", time.Now().UnixNano())
-	}
-	return "gi_" + hex.EncodeToString(buf)
+	return len(built.Inspection.Entrypoints) > 0 || built.Source.Kind == source.KindGitHub
 }
 
 // buildManifest turns a plan into the manifest an install would register, plus
@@ -749,6 +793,7 @@ func changeFor(path, action, owner string) receipt.FileChange {
 type commitResult struct {
 	manifestPath string
 	adapterPath  string
+	runtimeDir   string
 }
 
 // commit moves staged files into final state and registers the capability.
@@ -764,6 +809,22 @@ func (ins *Installer) commit(stageDir, stagedManifest string, opts Options, buil
 	if err != nil {
 		return out, err
 	}
+	// Commit a provisioned runtime first: the manifest must point at a file
+	// that already exists.
+	if res.provisionResult != nil && res.provisionResult.ExecutablePath != "" {
+		runtimeDir, meta, rerr := commitRuntime(ins.Registry, m.Name, res.provisionResult)
+		if rerr != nil {
+			return out, fmt.Errorf("commit runtime: %w", rerr)
+		}
+		out.runtimeDir = runtimeDir
+		res.RuntimeDir = runtimeDir
+		if res.ProvisioningDetail == nil {
+			res.ProvisioningDetail = &receipt.Provisioning{}
+		}
+		res.ProvisioningDetail.RuntimeDir = runtimeDir
+		res.ProvisioningDetail.Checksums = meta.Checksums
+	}
+
 	manifestPath, err := m.Save(ins.Registry.ManifestsDir())
 	if err != nil {
 		return out, fmt.Errorf("commit manifest: %w", err)
@@ -788,19 +849,34 @@ func (ins *Installer) commit(stageDir, stagedManifest string, opts Options, buil
 		}
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	// Point the manifest at the committed owned runtime, when one exists.
+	if out.runtimeDir != "" {
+		exe, ok := readRuntimeExecutable(out.runtimeDir, m.Name)
+		if ok {
+			m.Execution.Command = exe
+			data, mErr := m.JSON()
+			if mErr == nil {
+				if wErr := os.WriteFile(manifestPath, append(data, '\n'), 0o644); wErr == nil {
+					out.manifestPath = manifestPath
+				}
+			}
+		}
+	}
+
 	entry := registry.Entry{
 		Name:         m.Name,
 		Version:      m.Version,
 		Strategy:     m.Strategy,
 		Support:      string(m.Support),
+		State:        registry.StateReady,
 		Status:       m.Status,
 		Source:       m.Source,
 		Goal:         m.Goal,
 		ManifestPath: manifestPath,
 		AdapterPath:  out.adapterPath,
+		RuntimeDir:   out.runtimeDir,
 		InstallID:    res.InstallID,
-		InstalledAt:  now,
+		InstalledAt:  now(),
 	}
 	if ins.Registry.Has(m.Name) {
 		if !opts.AllowReplace {
@@ -812,7 +888,7 @@ func (ins *Installer) commit(stageDir, stagedManifest string, opts Options, buil
 		if err := cleanupEntryFiles(old); err != nil {
 			return out, err
 		}
-		entry.UpdatedAt = now
+		entry.UpdatedAt = now()
 		if err := ins.Registry.Update(entry); err != nil {
 			return out, err
 		}
@@ -1192,6 +1268,7 @@ func (ins *Installer) Capabilities() ([]CapabilitySummary, error) {
 			Name:     e.Name,
 			Strategy: e.Strategy,
 			Support:  e.Support,
+			State:    string(e.State),
 			Status:   e.Status,
 		}
 		m, err := manifest.Load(e.ManifestPath)
@@ -1205,7 +1282,9 @@ func (ins *Installer) Capabilities() ([]CapabilitySummary, error) {
 		summary.UseWhen = m.Grokbot.UseWhen
 		summary.Input = m.Input
 		summary.Output = m.Output
-		summary.Runnable = m.Runnable()
+		// Runnable requires both a runnable manifest and a ready lifecycle
+		// state: a broken or dirty capability must never be offered as callable.
+		summary.Runnable = m.Runnable() && e.State.Runnable()
 		if m.Runnable() {
 			summary.Call = m.CallLine()
 			summary.GrokBot = m.ContractText()
@@ -1242,8 +1321,25 @@ func (ins *Installer) Uninstall(name string) error {
 	if err != nil {
 		return err
 	}
+	// A runtime shared with another capability is never removed: ownership is
+	// per capability, and removing a shared resource would break the other one.
+	var shared []string
+	if entry.RuntimeDir != "" {
+		others := ins.sharedRuntimeOwnersExcept(entry.RuntimeDir, name)
+		if len(others) == 0 {
+			if err := os.RemoveAll(entry.RuntimeDir); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove runtime %s: %w", entry.RuntimeDir, err)
+			}
+		} else {
+			shared = others
+		}
+	}
 	if err := cleanupEntryFiles(entry); err != nil {
 		return err
+	}
+	if len(shared) > 0 {
+		_ = cache.WriteJSONAtomic(ins.Registry.RuntimePath(name)+".shared.json",
+			map[string]any{"retained_for": shared})
 	}
 	if err := ins.Registry.Remove(name); err != nil {
 		return err
@@ -1258,6 +1354,26 @@ func (ins *Installer) Uninstall(name string) error {
 		}
 	}
 	return nil
+}
+
+// sharedRuntimeOwnersExcept lists other capabilities claiming a runtime.
+func (ins *Installer) sharedRuntimeOwnersExcept(runtimeDir, self string) []string {
+	entries, err := ins.Registry.List()
+	if err != nil {
+		return nil
+	}
+	var owners []string
+	abs, _ := filepath.Abs(runtimeDir)
+	for _, e := range entries {
+		if e.Name == self || e.RuntimeDir == "" {
+			continue
+		}
+		other, _ := filepath.Abs(e.RuntimeDir)
+		if other == abs {
+			owners = append(owners, e.Name)
+		}
+	}
+	return owners
 }
 
 func cleanupEntryFiles(entry registry.Entry) error {

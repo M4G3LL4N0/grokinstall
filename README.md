@@ -48,19 +48,96 @@ and GrokInstall never runs a project's install scripts.
 | `grokinstall inspect SOURCE` | Deterministic, evidence-backed inspection |
 | `grokinstall plan SOURCE --goal "..."` | Full planning pipeline, no changes |
 | `grokinstall compare SOURCE --goal "..."` | Strategy comparison across twelve dimensions |
-| `grokinstall install SOURCE --goal "..."` | Install a capability integration |
+| `grokinstall install SOURCE --goal "..."` | Install a capability integration (provisioning if needed) |
 | `grokinstall run NAME` | Invoke a capability |
 | `grokinstall test NAME` | Smoke test a capability |
 | `grokinstall list` | Installed capabilities |
 | `grokinstall info NAME` | Everything worth knowing about one capability |
-| `grokinstall capabilities` | Machine-facing discovery for GrokBot |
+| `grokinstall capabilities` | Runnable capabilities, for GrokBot discovery (`--all` for the rest) |
 | `grokinstall grokbot NAME` | Smallest sufficient GrokBot contract |
 | `grokinstall uninstall NAME` | Remove only GrokInstall-owned resources |
+| `grokinstall diagnose [NAME]` | Explain why a capability is not working, with evidence |
+| `grokinstall audit [NAME]` | Deterministic review of one integration |
 | `grokinstall doctor` | Environment and state checks with fixes |
 | `grokinstall usage` | Measured usage counters |
 
 `--json` is supported everywhere. `--dry-run` is supported on `install` and
 `uninstall`. Exit codes: `0` success, `1` failure, `2` usage error.
+
+### Provisioning policy
+
+`install` can obtain a missing executable. It never installs upstream
+software blindly.
+
+```bash
+--provision=safe      # default: only methods that need no extra authorization
+--provision=never     # never provision
+--provision=prompt    # behave like safe and surface decisions to the caller
+```
+
+Approvals are specific to a risk class. There is deliberately no generic
+`--yes`:
+
+| Flag | Unlocks |
+| --- | --- |
+| `--allow-install-scripts` | package lifecycle scripts and build backends |
+| `--allow-source-build` | compiling untrusted source |
+| `--allow-system-package-manager` | machine-wide package changes |
+
+When a method needs more trust than the safe policy allows, the install stops
+and explains itself instead of proceeding:
+
+```text
+PROVISIONING BLOCKED
+
+Executable:
+click
+
+Safest available method:
+package manager: python (uv/pip)
+
+Risk:
+  - Python installation may execute the project's build backend
+  - the package declares lifecycle scripts that would execute
+
+Required authorization:
+  --allow-install-scripts
+
+Alternatives:
+  package_manager   contains lifecycle scripts that would execute
+```
+
+## Installed versus planned
+
+A plan is not an installed capability.
+
+| State | Meaning |
+| --- | --- |
+| `ready` | installed, verified, runnable |
+| `broken` | installed but no longer working |
+| `dirty` | a mutation partially applied and rollback could not be proven complete |
+| `uninstalled` | removed, receipt retained |
+| `plan_only` | a persisted plan, never registered as a capability |
+
+`grokinstall list` shows installed capabilities. `grokinstall capabilities`
+shows only runnable ones by default, so GrokBot is never handed something it
+cannot call. Use `--all` to see the rest. Plans are stored in
+`~/.grokinstall/plans/`, deliberately outside the capability registry.
+
+## Provisioned runtimes
+
+Anything GrokInstall provisions lives in a GrokInstall-owned runtime:
+
+```
+~/.grokinstall/runtimes/<capability>/
+├── bin/           the executable
+├── metadata.json  provenance, method, version, file hashes
+```
+
+No global PATH pollution, clean uninstall, version isolation, and clear
+ownership. `grokinstall audit` compares the recorded hashes with what is on
+disk, and `grokinstall diagnose` reports a modified runtime as a critical
+finding.
 
 ## Strategy support
 
@@ -122,12 +199,15 @@ database: the ranking is a plain term-frequency score you can explain.
 ## Staged installation
 
 ```text
-PLAN → STAGE → VERIFY → COMMIT TO REGISTRY
+PLAN → PROVISION STAGE → ADAPTER STAGE → MANIFEST STAGE
+     → VERIFY → COMMIT FILES → REGISTER → RECEIPT
 ```
 
 Nothing is written into final state until verification passes. A failed
 verification discards the stage, registers nothing, and still leaves a receipt
-so the attempt stays auditable.
+so the attempt stays auditable. A failure during commit is rolled back; if the
+rollback cannot be proven complete the capability is marked `dirty` and the
+install is never reported as successful.
 
 ## Receipts and uninstall
 
@@ -135,10 +215,10 @@ Every mutating install writes a receipt recording the install id, source
 identity and commit, goal, strategy, files created (with ownership), commands
 executed, dependencies introduced, verification results and the outcome.
 
-Uninstall removes only what GrokInstall created — its manifest, its adapter and
-its registry entry. Upstream repositories, user data, receipts, logs and
-unrelated files are never touched. The receipt is preserved and marked
-uninstalled.
+Uninstall removes only what GrokInstall created — its manifest, its adapter,
+its owned runtime and its registry entry. Upstream repositories, pre-existing
+system binaries, shared runtimes, user data, receipts, logs and unrelated files
+are never touched. The receipt is preserved and marked uninstalled.
 
 ## GrokBot discovery
 
@@ -162,6 +242,14 @@ internals are required.
 - Secret-like files are reported; their contents are never imported.
 - Symlinks are not followed, and inspection is bounded by file count,
   per-file size and total size.
+- Secret material is redacted out of Context Packs, manifests, diagnostics and
+  GrokBot contracts.
+- Release archives are extracted under strict rules: path traversal, absolute
+  paths, symlinks, hardlinks, oversized entries and decompression bombs are all
+  rejected.
+- Approvals are per risk class. There is no generic bypass flag.
+- Provisioned runtimes record file hashes; `audit` and `diagnose` detect
+  modification.
 
 ## Toolchain resolution
 

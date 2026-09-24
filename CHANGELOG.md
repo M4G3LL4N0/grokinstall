@@ -5,6 +5,73 @@ All notable changes to GrokInstall are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to semantic versioning once the CLI is stable.
 
+## [0.3.0] - Part 3: safe provisioning, diagnosis, audit and hardening
+
+Closes the largest remaining gap — a detected capability whose executable was
+missing — while hardening GrokInstall against unsafe repositories, failed
+installs, broken capabilities and misleading state.
+
+### Added
+
+- **Provisioner abstraction** with an explicit policy. Candidates are compared
+  in safety order: an already-installed executable, a verifiable upstream
+  release artifact, a reproducible build into an owned runtime, a language
+  package manager, a system package manager, a user-provided command, or an
+  explicit unresolved requirement.
+- **GitHub release provisioner**: detects the platform mechanically, selects a
+  compatible asset conservatively, downloads into staging, verifies a published
+  checksum when one exists, and reports `checksum: unavailable upstream`
+  honestly when it does not.
+- **Constrained Go source builder**: runs `go build` and nothing else. Makefiles,
+  shell install scripts and `go generate` are never run; a project that needs
+  them is refused with the specific authorization that would be required.
+- **GrokInstall-owned runtimes** under `~/.grokinstall/runtimes/` with
+  `metadata.json` provenance and per-file hashes. No global PATH pollution,
+  clean uninstall, version isolation.
+- **Structured refusals**: when a method needs more trust than the safe policy
+  allows, installation stops and explains the risk, the required authorization
+  and the alternatives, instead of proceeding.
+- **Specific approvals** (`--allow-install-scripts`,
+  `--allow-source-build`, `--allow-system-package-manager`). There is
+  deliberately no generic `--yes`.
+- `grokinstall diagnose [NAME|--all]` and `grokinstall audit [NAME|--all]`.
+- `archive`: safe extraction rejecting traversal, absolute paths, symlinks,
+  hardlinks, entry-count limits and decompression bombs.
+- `redact`: conservative secret exclusion from Context Packs, manifests,
+  diagnostics and GrokBot contracts.
+- Adversarial test suite as a distinct package.
+
+### Changed
+
+- **A plan is no longer an installed capability.** Plan-only strategies are
+  persisted in `~/.grokinstall/plans/` and never registered. Part 2 registry
+  entries are migrated out of the capability registry on first use.
+- Explicit lifecycle states: `ready`, `broken`, `dirty`, `uninstalled`,
+  `plan_only`. `grokinstall capabilities` shows only runnable capabilities by
+  default; `--all` exposes the rest.
+- The install transaction is now `plan → provision stage → adapter stage →
+  manifest stage → verify → commit files → register → receipt`. A failed
+  verification discards the stage; a failed commit is rolled back; an
+  incomplete rollback marks the capability `dirty` and never reports success.
+- Receipts record provisioning method, artifact source and version, published
+  and actual checksums, build command, runtime directory, file ownership and
+  security approvals — never secrets.
+- The transaction provisions before the manifest is built, so a manifest can
+  never point at a staging path.
+- `doctor` now reports dirty installs, broken capabilities, missing targets,
+  modified runtimes, orphan runtimes and manifests, corrupt receipts and
+  unsafe permissions, prioritized as CRITICAL / ACTION REQUIRED / OK.
+
+### Security
+
+- A supported strategy that cannot obtain an executable fails rather than
+  degrading to a plan.
+- Failed verification and policy refusals register nothing and leave no staging
+  residue.
+- A generic authorization string cannot unlock a risk class it does not name.
+- Unrelated environment variables do not reach capabilities.
+- Child processes cannot outlive a capability timeout.
+
 ## [0.2.0] - Part 2: installation and capability runtime
 
 GrokInstall becomes a working capability installer and runtime. Installing a

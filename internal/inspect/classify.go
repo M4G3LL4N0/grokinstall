@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"grokinstall/internal/evidence"
+	"grokinstall/internal/redact"
 )
 
 var openAPIFilenames = []string{"openapi.json", "openapi.yaml", "openapi.yml", "swagger.json", "swagger.yaml", "swagger.yml", "api.json", "api.yaml", "api.yml"}
@@ -231,8 +232,10 @@ func looksLikeMCP(text string) bool {
 
 func hasShebang(text string) bool { return strings.HasPrefix(text, "#!") }
 
-// safeDescription returns prose that is safe to carry forward as metadata,
-// skipping any line that reads like an instruction to an agent.
+// safeDescription returns prose that is safe to carry forward as metadata.
+// It skips headings, anything that reads like an instruction to an agent, and
+// anything that looks like it carries a credential: a description is a
+// convenience, so it must never become a channel for untrusted content.
 func safeDescription(text string) string {
 	for _, line := range strings.Split(text, "\n") {
 		t := strings.TrimSpace(line)
@@ -240,6 +243,12 @@ func safeDescription(text string) string {
 			continue
 		}
 		if injectionRe.MatchString(t) {
+			continue
+		}
+		if redact.ContainsSecret(t) {
+			continue
+		}
+		if strings.HasPrefix(t, "export ") || strings.HasPrefix(t, "$ ") {
 			continue
 		}
 		return truncate(t, 280)

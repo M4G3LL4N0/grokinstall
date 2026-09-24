@@ -67,6 +67,8 @@ func NewRoot() *cobra.Command {
 		newCapabilitiesCommand(g),
 		newGrokbotCommand(g),
 		newUninstallCommand(g),
+		newDiagnoseCommand(g),
+		newAuditCommand(g),
 	)
 	return root
 }
@@ -447,16 +449,36 @@ func newDoctorCommand(g *globalFlags) *cobra.Command {
 	}
 }
 
+// renderDoctor groups output so action-required problems are impossible to
+// miss, and optional tooling never looks like a failure.
 func renderDoctor(w io.Writer, rep *diagnostics.Report) {
 	fmt.Fprintf(w, "GrokInstall doctor\n")
 	fmt.Fprintf(w, "State: %s\n\n", rep.StateDir)
-	for _, c := range rep.Checks {
-		fmt.Fprintf(w, "  [%s] %-22s %s\n", strings.ToUpper(string(c.Status)), c.Name, c.Detail)
-		if c.Action != "" && c.Status != diagnostics.StatusOK {
-			fmt.Fprintf(w, "         %-22s -> %s\n", "", c.Action)
+
+	section := func(title string, want diagnostics.Status) {
+		var rows []diagnostics.Check
+		for _, c := range rep.Checks {
+			if c.Status == want {
+				rows = append(rows, c)
+			}
 		}
+		if len(rows) == 0 {
+			return
+		}
+		fmt.Fprintf(w, "%s\n", title)
+		for _, c := range rows {
+			fmt.Fprintf(w, "  %-24s %s\n", c.Name, c.Detail)
+			if c.Action != "" {
+				fmt.Fprintf(w, "  %-24s -> %s\n", "", c.Action)
+			}
+		}
+		fmt.Fprintln(w)
 	}
-	fmt.Fprintf(w, "\n  %d ok, %d warning, %d failed\n", rep.Summary.OK, rep.Summary.Warn, rep.Summary.Fail)
+
+	section("CRITICAL (action required)", diagnostics.StatusFail)
+	section("ACTION REQUIRED", diagnostics.StatusWarn)
+	section("OK", diagnostics.StatusOK)
+	fmt.Fprintf(w, "  %d ok, %d action required, %d failed\n", rep.Summary.OK, rep.Summary.Warn, rep.Summary.Fail)
 }
 
 func newUsageCommand(g *globalFlags) *cobra.Command {
