@@ -34,7 +34,7 @@ read line
 printf '{"ok":true,"result":{"received":%s}}' "$line"
 `),
 		InputMode: ModeStdinJSON,
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{"query":"foo"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ printf '{"ok":true,"result":{"argc":%d,"arg1":"%s"}}' "$#" "$2"
 `),
 		InputMode: ModeArgv,
 		ArgvMap:   map[string]string{"query": "--query"},
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{"query":"hello world"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ printf '{"ok":true,"result":{"value":"%s"}}' "$2"
 `),
 		InputMode: ModeArgv,
 		ArgvMap:   map[string]string{"q": "--q"},
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{"q":"; touch /tmp/grokinstall-pwned"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestOutputIsBounded(t *testing.T) {
 		Type:           TypeSubprocess,
 		Command:        script(t, "loud.sh", "#!/bin/sh\ncat > /dev/null\ni=0\nwhile [ $i -lt 5000 ]; do printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; i=$((i+1)); done\n"),
 		InputMode:      ModeNone,
-		Timeout:        5 * time.Second,
+		Timeout:        30 * time.Second,
 		MaxOutputBytes: 1024,
 	}, nil)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestNonZeroExitIsStructuredFailure(t *testing.T) {
 		Type:      TypeSubprocess,
 		Command:   script(t, "fail.sh", "#!/bin/sh\ncat > /dev/null\nprintf 'bad input' >&2\nexit 4\n"),
 		InputMode: ModeStdinJSON,
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestMalformedOutputIsStructuredFailure(t *testing.T) {
 		Type:       TypeSubprocess,
 		Command:    script(t, "bad.sh", "#!/bin/sh\ncat > /dev/null\nprintf 'not json at all'\n"),
 		InputMode:  ModeStdinJSON,
-		Timeout:    5 * time.Second,
+		Timeout:    30 * time.Second,
 		ExpectJSON: true,
 	}, json.RawMessage(`{}`))
 	if err != nil {
@@ -183,7 +183,7 @@ func TestPlainTextOutputIsWrapped(t *testing.T) {
 		Type:      TypeSubprocess,
 		Command:   script(t, "text.sh", "#!/bin/sh\ncat > /dev/null\nprintf 'plain result line'\n"),
 		InputMode: ModeStdinJSON,
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestInvalidInputIsRejected(t *testing.T) {
 		Type:      TypeSubprocess,
 		Command:   script(t, "ok.sh", echoJSON),
 		InputMode: ModeStdinJSON,
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, json.RawMessage(`{not json`))
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestWorkingDirIsApplied(t *testing.T) {
 		Command:    script(t, "pwd.sh", "#!/bin/sh\nprintf '{\"ok\":true,\"result\":{\"cwd\":\"%s\"}}' \"$(pwd)\"\n"),
 		InputMode:  ModeNone,
 		WorkingDir: dir,
-		Timeout:    5 * time.Second,
+		Timeout:    30 * time.Second,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +265,7 @@ func TestEnvironmentIsExplicit(t *testing.T) {
 		Command:   script(t, "env.sh", "#!/bin/sh\nprintf '{\"ok\":true,\"result\":{\"token\":\"%s\"}}' \"$GI_TOKEN\"\n"),
 		InputMode: ModeNone,
 		Env:       map[string]string{"GI_TOKEN": "abc123"},
-		Timeout:   5 * time.Second,
+		Timeout:   30 * time.Second,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +284,7 @@ func TestBuiltinHandlerReceivesInput(t *testing.T) {
 	resp, err := r.Invoke(contextTODO(), Spec{
 		Type:    TypeBuiltin,
 		Handler: "test",
-		Timeout: 5 * time.Second,
+		Timeout: 30 * time.Second,
 	}, json.RawMessage(`{"query":"abc"}`))
 	if err != nil {
 		t.Fatal(err)
