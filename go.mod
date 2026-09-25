@@ -1,6 +1,6 @@
-module grokinstall
+module github.com/M4G3LL4N0/grokinstall
 
-go 1.27.1
+go 1.24
 
 require github.com/spf13/cobra v1.10.2
 

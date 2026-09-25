@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"grokinstall/internal/cli"
+	"github.com/M4G3LL4N0/grokinstall/internal/cli"
 )
 
 func main() {

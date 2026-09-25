@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/plan"
-	"grokinstall/internal/receipt"
-	"grokinstall/internal/strategy"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/plan"
+	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
+	"github.com/M4G3LL4N0/grokinstall/internal/strategy"
 )
 
 func newInstallID() string {

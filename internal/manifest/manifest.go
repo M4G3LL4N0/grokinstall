@@ -14,9 +14,9 @@ import (
 	"regexp"
 	"strings"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/redact"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/redact"
 )
 
 // SchemaID identifies the manifest schema.

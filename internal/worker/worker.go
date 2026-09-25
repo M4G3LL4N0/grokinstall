@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/contextpack"
+	"github.com/M4G3LL4N0/grokinstall/internal/contextpack"
 )
 
 // Default execution bounds for a worker subprocess.

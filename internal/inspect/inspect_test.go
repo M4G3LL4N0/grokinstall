@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 func fixture(t *testing.T, name string) string {

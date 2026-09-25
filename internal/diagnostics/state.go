@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
 )
 
 // Check names used by the state checks.

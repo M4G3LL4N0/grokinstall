@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/plan"
-	"grokinstall/internal/provision"
-	"grokinstall/internal/receipt"
-	"grokinstall/internal/registry"
-	"grokinstall/internal/source"
-	"grokinstall/internal/strategy"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/plan"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision"
+	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/strategy"
 )
 
 // ProvisionPolicy selects how much provisioning an install may perform.

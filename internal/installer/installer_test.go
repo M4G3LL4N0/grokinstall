@@ -8,11 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"grokinstall/internal/inspect"
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/receipt"
-	"grokinstall/internal/registry"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/inspect"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 // --- fixtures ---------------------------------------------------------------

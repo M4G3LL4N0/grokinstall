@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/inspect"
-	"grokinstall/internal/source"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/inspect"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 func newState(t *testing.T) *cache.Store {

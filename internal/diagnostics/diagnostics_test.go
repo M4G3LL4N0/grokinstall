@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/registry"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 func TestDoctorRunsOnAFreshStateDirectory(t *testing.T) {

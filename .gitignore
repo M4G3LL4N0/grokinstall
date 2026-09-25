@@ -1,8 +1,30 @@
+# build output
 /grokinstall
+/bin/grokinstall-bin
 /dist/
-bin/grokinstall-bin
 *.test
 *.out
+
+# local state (never commit a user's GrokInstall state directory)
+.grokinstall/
+*.db
+usage.jsonl
+registry.json
+
+# credentials and environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# editor and OS junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
 
 # stray temp files from interrupted tooling
 _tmp_*

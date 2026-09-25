@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/capability"
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/capability"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 func caps(kinds ...capability.Kind) []capability.Capability {

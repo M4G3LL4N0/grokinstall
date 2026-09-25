@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 func TestPackContainsOnlyAllowedSections(t *testing.T) {

@@ -1,82 +1,229 @@
 # GrokInstall
 
-**Give GrokInstall a source. Tell it what GrokBot should do with it.**
-GrokInstall figures out the smallest, safest way to make it work.
-
 **Install the capability, not the complexity.**
 
-GrokInstall is a universal integration compiler and advisor for GrokBot. It is
-not primarily a package installer: it takes a `SOURCE` plus a user goal, and
-produces understanding, capabilities, architecture alternatives, a recommended
-toolchain, an installation plan, and a tiny GrokBot capability.
+Give GrokInstall a project and tell it what you want GrokBot to do.
 
-GrokBot stays a thin orchestrator. Whole repositories and large documentation
-sets never enter its context.
+GrokInstall inspects the source, discovers the useful capability, compares
+integration strategies, resolves a safe toolchain, installs and verifies the
+smallest useful integration, and generates a compact contract GrokBot can invoke
+without loading the entire project into context.
 
-## What GrokInstall does
+```text
+GitHub repo
+     ↓
+GrokInstall
+     ↓
+inspect → compare → provision → verify
+     ↓
+tiny capability contract
+     ↓
+GrokBot
+```
 
-GrokInstall takes a `SOURCE` plus a user goal, and turns it into a verified,
-registered GrokBot capability:
+GrokInstall is **the integration guru for GrokBot**. It is not a package
+installer. It decides what should *not* be installed just as carefully as what
+should be, and "do not install" is a first-class answer.
+
+---
+
+## Why GrokInstall
+
+Pointing a model at a repository is expensive, fragile and unsafe. The useful
+thing about a project is usually a handful of operations, not its source.
+
+| Without GrokInstall | With GrokInstall |
+| --- | --- |
+| The whole repository enters model context | GrokBot receives a small contract |
+| Every integration is a bespoke prompt | Integrations are compared and chosen |
+| Missing tools are improvised | The toolchain is resolved or explicitly unresolved |
+| Install scripts run because a README says so | Scripts are recorded as evidence, never executed blindly |
+| A failed install leaves a half-installed state | Nothing is registered until verification passes |
+| "Why is this broken?" is guesswork | `diagnose` answers with evidence and a fix |
+
+## Quick Start
+
+Requires Go 1.24 or later to build from source. A prebuilt binary is available
+from [GitHub releases](https://github.com/M4G3LL4N0/grokinstall/releases).
+
+```bash
+# Look at a project before installing anything
+grokinstall inspect https://github.com/sharkdp/bat
+
+# See how it would integrate, and why
+grokinstall compare https://github.com/sharkdp/bat \
+  --goal "Let GrokBot use bat to inspect text files"
+
+# Install the capability
+grokinstall install https://github.com/sharkdp/bat \
+  --goal "Let GrokBot use bat to inspect text files"
+
+# What can GrokBot call?
+grokinstall capabilities
+
+# The contract for one capability
+grokinstall grokbot bat.search
+
+# Call it
+grokinstall run bat.search --input '{}'
+```
+
+## How It Works
 
 ```text
 SOURCE + GOAL
   ↓
-INSPECT            never executes project code
+INSPECT         bounded, deterministic, never executes source code
   ↓
-UNDERSTAND         evidence-backed findings
+EVIDENCE        every conclusion backed by what was actually observed
   ↓
-COMPARE            ten strategies, twelve dimensions
+CAPABILITIES    only what evidence supports
   ↓
-STAGE              manifest, adapter, receipt
+STRATEGIES      ten candidates, always compared
   ↓
-VERIFY             the capability actually runs
+PROVISION       the smallest safe route to a working executable
   ↓
-REGISTER           a tiny GrokBot capability contract
+VERIFY          the capability actually runs
   ↓
-RUN                one command, bounded output
+CONTRACT        a small manifest GrokBot can invoke
 ```
 
-**Install the capability, not the complexity.** Installing a capability means
-registering a contract, a thin adapter when one is genuinely needed, a registry
-entry and a receipt. It does not mean installing an upstream software stack,
-and GrokInstall never runs a project's install scripts.
+## Supported Today
 
-## Commands
+Verified against the Part 3 release and the `sharkdp/bat` flagship run.
 
-| Command | What it does |
+**Sources**
+- local repositories
+- public GitHub repositories
+
+**Integration strategies**
+- `cli_bridge` — wrap an existing command behind a JSON contract
+- `knowledge_import` — a bounded local index with deterministic search
+- `external_execution` — register an externally managed command
+- `no_install` — a first-class successful recommendation
+
+**Provisioning**
+- an already-installed compatible executable
+- a GitHub release artifact (checksum verified when upstream publishes one)
+- a Go source build into a GrokInstall-owned runtime
+
+**Operations**
+- capability registry with explicit lifecycle states
+- universal capability runtime
+- GrokBot contracts, measured and bounded
+- Context Packs that keep whole repositories out of model context
+- staged installation with rollback and a `dirty` state
+- receipts recording real changes and ownership
+- `diagnose`, `audit`, `doctor`, `usage`
+- safe uninstall
+- inspection caching keyed by commit or content hash
+- secret redaction across context packs, manifests and contracts
+- adversarial source handling
+
+## Detected / Planned
+
+These are **detected today**. Full installation support is coming next. They are
+not equivalent to the verified integrations above.
+
+| Strategy | Status |
 | --- | --- |
-| `grokinstall inspect SOURCE` | Deterministic, evidence-backed inspection |
-| `grokinstall plan SOURCE --goal "..."` | Full planning pipeline, no changes |
-| `grokinstall compare SOURCE --goal "..."` | Strategy comparison across twelve dimensions |
-| `grokinstall install SOURCE --goal "..."` | Install a capability integration (provisioning if needed) |
-| `grokinstall run NAME` | Invoke a capability |
-| `grokinstall test NAME` | Smoke test a capability |
-| `grokinstall list` | Installed capabilities |
-| `grokinstall info NAME` | Everything worth knowing about one capability |
-| `grokinstall capabilities` | Runnable capabilities, for GrokBot discovery (`--all` for the rest) |
-| `grokinstall grokbot NAME` | Smallest sufficient GrokBot contract |
-| `grokinstall uninstall NAME` | Remove only GrokInstall-owned resources |
-| `grokinstall diagnose [NAME]` | Explain why a capability is not working, with evidence |
-| `grokinstall audit [NAME]` | Deterministic review of one integration |
-| `grokinstall doctor` | Environment and state checks with fixes |
-| `grokinstall usage` | Measured usage counters |
+| `api_bridge` | detected and compared; plan-only |
+| `mcp_bridge` | detected and compared; plan-only |
+| `docker_bridge` | detected and compared; plan-only |
+| `local_service` | detected and compared; plan-only |
+| `generated_adapter` | detected and compared; plan-only |
+| `micro_prompt_pack` | detected and compared; plan-only |
 
-`--json` is supported everywhere. `--dry-run` is supported on `install` and
-`uninstall`. Exit codes: `0` success, `1` failure, `2` usage error.
+**Also planned**
+- npm / Python / Cargo package-manager execution (discovered and classified
+  correctly; no executor, because these can run arbitrary build code)
+- OpenCode, Cursor, ChatGPT, Claude and Grok worker integrations
+- Homebrew formula
 
-### Provisioning policy
+GrokInstall does **not** claim to support every GitHub project, to install
+anything with one click, or to work with every tool. It refuses when it cannot
+do something safely, and says why.
 
-`install` can obtain a missing executable. It never installs upstream
-software blindly.
+## Examples
+
+### It provisions a missing executable
+
+```text
+SOURCE
+sharkdp/bat
+
+GOAL
+Expose the useful CLI capability to GrokBot.
+
+GROKINSTALL DISCOVERED
+A CLI capability, but no appropriate existing executable.
+
+PROVISIONING
+GitHub release artifact (v0.26.1, aarch64-apple-darwin).
+
+INSTALL LOCATION
+GrokInstall-owned runtime, not your PATH.
+
+RESULT
+A verified, runnable capability.
+
+GROKBOT RECEIVES
+A compact contract (measured at 443 bytes in the verified run), not the
+repository.
+
+UNINSTALL
+The owned runtime is removed. No system or global package state was ever
+touched.
+```
+
+This worked because `bat` publishes a signed-off release artifact for this
+platform. It is not a claim that every repository can be provisioned this way.
+
+### It says no
+
+```text
+SOURCE
+pallets/click
+
+GROKINSTALL FOUND
+A Python installation route, which may execute the project's build backend.
+
+SAFE AUTOMATIC POLICY
+Blocked.
+
+RESULT
+Nothing installed. Nothing registered.
+
+GROKINSTALL EXPLAINS
+The required authorization (--allow-install-scripts) and the alternatives.
+```
+
+See [the click refusal](docs/provisioning.md#worked-example-a-successful-provision) and
+[the refusal example](docs/provisioning.md#worked-example-b-a-safe-refusal) in the
+provisioning docs.
+
+## Safe Provisioning
+
+GrokInstall can obtain a missing executable, but it is not a general package
+manager. Routes are compared in safety order:
+
+```text
+1. already-installed compatible executable      changes nothing
+2. verifiable upstream release artifact        owned runtime only
+3. reproducible build into an owned runtime    `go build` only
+4. language package manager                   needs authorization
+5. system package manager                     needs authorization
+6. user-provided command                      explicit
+7. unresolved requirement                    reported, not guessed
+```
 
 ```bash
---provision=safe      # default: only methods that need no extra authorization
+--provision=safe      # default: only routes needing no extra authorization
 --provision=never     # never provision
 --provision=prompt    # behave like safe and surface decisions to the caller
 ```
 
-Approvals are specific to a risk class. There is deliberately no generic
-`--yes`:
+Approvals name a specific risk class. There is deliberately no generic `--yes`:
 
 | Flag | Unlocks |
 | --- | --- |
@@ -84,368 +231,207 @@ Approvals are specific to a risk class. There is deliberately no generic
 | `--allow-source-build` | compiling untrusted source |
 | `--allow-system-package-manager` | machine-wide package changes |
 
-When a method needs more trust than the safe policy allows, the install stops
-and explains itself instead of proceeding:
+## GrokBot Integration
 
-```text
-PROVISIONING BLOCKED
-
-Executable:
-click
-
-Safest available method:
-package manager: python (uv/pip)
-
-Risk:
-  - Python installation may execute the project's build backend
-  - the package declares lifecycle scripts that would execute
-
-Required authorization:
-  --allow-install-scripts
-
-Alternatives:
-  package_manager   contains lifecycle scripts that would execute
-```
-
-## Installed versus planned
-
-A plan is not an installed capability.
-
-| State | Meaning |
-| --- | --- |
-| `ready` | installed, verified, runnable |
-| `broken` | installed but no longer working |
-| `dirty` | a mutation partially applied and rollback could not be proven complete |
-| `uninstalled` | removed, receipt retained |
-| `plan_only` | a persisted plan, never registered as a capability |
-
-`grokinstall list` shows installed capabilities. `grokinstall capabilities`
-shows only runnable ones by default, so GrokBot is never handed something it
-cannot call. Use `--all` to see the rest. Plans are stored in
-`~/.grokinstall/plans/`, deliberately outside the capability registry.
-
-## Provisioned runtimes
-
-Anything GrokInstall provisions lives in a GrokInstall-owned runtime:
-
-```
-~/.grokinstall/runtimes/<capability>/
-├── bin/           the executable
-├── metadata.json  provenance, method, version, file hashes
-```
-
-No global PATH pollution, clean uninstall, version isolation, and clear
-ownership. `grokinstall audit` compares the recorded hashes with what is on
-disk, and `grokinstall diagnose` reports a modified runtime as a critical
-finding.
-
-## Strategy support
-
-| Strategy | Support |
-| --- | --- |
-| `cli_bridge` | **supported** — registers an existing command behind a JSON contract |
-| `knowledge_import` | **supported** — bounded local index and deterministic search |
-| `external_execution` | **supported** — registers an externally managed command |
-| `no_install` | **supported** — a successful, first-class outcome |
-| `api_bridge` | plan-only — detected and compared, not yet invoked |
-| `mcp_bridge` | plan-only — detected and compared, not yet invoked |
-| `docker_bridge` | plan-only — detected and compared, not yet invoked |
-| `local_service` | plan-only — detected and compared, not yet invoked |
-| `generated_adapter` | plan-only — needs a configured builder worker |
-| `micro_prompt_pack` | plan-only — detected and compared |
-
-A strategy that promises a runnable capability but cannot resolve an executable
-**fails installation**. It never silently degrades to a plan.
-
-## Universal capability runtime
-
-Every capability is invoked the same way and returns the same envelope:
+GrokBot needs three commands and never needs the repository.
 
 ```bash
-grokinstall run repo.search --input '{"query":"authentication"}'
+# 1. What can I call?
+grokinstall capabilities --json
+
+# 2. How do I call it?
+grokinstall grokbot NAME --json
+
+# 3. Call it
+grokinstall run NAME --input '{...}'
 ```
 
-```json
-{ "ok": true, "result": {}, "artifacts": [], "warnings": [] }
-```
-
-Input may also be piped on stdin. The runtime owns safety: direct argv
-execution (never shell-string interpolation), explicit working directory and
-environment, hard timeouts, bounded stdout/stderr, and structured error codes
-such as `timeout`, `nonzero_exit`, `output_too_large` and `malformed_output`.
-
-## Knowledge capabilities
-
-A documentation source becomes a bounded local index rather than a copy of the
-documentation in GrokBot's context:
+On failure:
 
 ```bash
-grokinstall install ./docs --goal "Let GrokBot retrieve relevant documentation"
-grokinstall run project.docs --input '{"query":"authentication","limit":3}'
+grokinstall diagnose NAME --json
 ```
 
-```json
-{
-  "matches": [
-    { "file": "docs/auth.md", "title": "Authentication", "excerpt": "...", "score": 12.4 }
-  ]
-}
-```
-
-Indexing is bounded by file count, per-file size and total size. Binary content
-is rejected. Excerpts are bounded. There are no embeddings and no vector
-database: the ranking is a plain term-frequency score you can explain.
-
-## Staged installation
-
-```text
-PLAN → PROVISION STAGE → ADAPTER STAGE → MANIFEST STAGE
-     → VERIFY → COMMIT FILES → REGISTER → RECEIPT
-```
-
-Nothing is written into final state until verification passes. A failed
-verification discards the stage, registers nothing, and still leaves a receipt
-so the attempt stays auditable. A failure during commit is rolled back; if the
-rollback cannot be proven complete the capability is marked `dirty` and the
-install is never reported as successful.
-
-## Receipts and uninstall
-
-Every mutating install writes a receipt recording the install id, source
-identity and commit, goal, strategy, files created (with ownership), commands
-executed, dependencies introduced, verification results and the outcome.
-
-Uninstall removes only what GrokInstall created — its manifest, its adapter,
-its owned runtime and its registry entry. Upstream repositories, pre-existing
-system binaries, shared runtimes, user data, receipts, logs and unrelated files
-are never touched. The receipt is preserved and marked uninstalled.
-
-## GrokBot discovery
-
-GrokBot needs only three commands to operate normally:
-
-```bash
-grokinstall capabilities --json   # enumerate callable capabilities
-grokinstall grokbot NAME --json  # get the contract for one
-grokinstall run NAME ...          # invoke it
-```
-
-No README, repository tree, package manifests, source code or strategy
-internals are required.
-
-## Source files are untrusted data
-
-- README and source text never become instructions to GrokInstall.
-- Instruction-like text is recorded as evidence, never obeyed.
-- Install scripts, `postinstall` hooks, `sudo` usage and download commands are
-  surfaced for review, never executed.
-- Secret-like files are reported; their contents are never imported.
-- Symlinks are not followed, and inspection is bounded by file count,
-  per-file size and total size.
-- Secret material is redacted out of Context Packs, manifests, diagnostics and
-  GrokBot contracts.
-- Release archives are extracted under strict rules: path traversal, absolute
-  paths, symlinks, hardlinks, oversized entries and decompression bombs are all
-  rejected.
-- Approvals are per risk class. There is no generic bypass flag.
-- Provisioned runtimes record file hashes; `audit` and `diagnose` detect
-  modification.
-
-## Toolchain resolution
-
-GrokInstall detects `git`, `gh`, `go`, `node`, `pnpm`, `npm`, `python`, `uv`,
-`docker`, `opencode`, `cursor`, `vercel` and `ollama`, and reports each as
-required, recommended, optional, irrelevant, missing, or satisfied by a
-substitute.
-
-**It never recommends installing everything.** OpenCode, Cursor, ChatGPT,
-Claude, Grok, Docker, Vercel and Ollama are optional capabilities, not
-prerequisites. Builder preference is: no generated code if unnecessary, then a
-deterministic adapter generator, then an existing local builder, then OpenCode,
-then Cursor, then a configured worker, then an explicit unresolved requirement.
+`grokinstall capabilities` shows only **runnable** capabilities by default, so
+GrokBot is never handed something it cannot call. See
+[docs/GROKBOT-HANDOFF.md](docs/GROKBOT-HANDOFF.md).
 
 ## Context Packs
 
-A `ContextPack` carries only the goal, relevant source metadata, relevant
-manifest evidence, discovered capabilities, unresolved questions and
-constraints. It is the only structure handed to a reasoning or coding worker,
-which is what keeps whole repositories out of model context.
+When optional reasoning or coding assistance is needed, it receives a
+`ContextPack`: goal, relevant source metadata, relevant evidence, capabilities,
+unresolved questions and constraints. Secret material is redacted. Whole
+repositories are never handed to a model.
 
-## State
+## Security Model
 
+Source repositories are treated as hostile. See [SECURITY.md](SECURITY.md) for
+the full model and [docs/security.md](docs/security.md) for the mechanics.
+
+- README and source text are **evidence, never authority**.
+- Inspection is bounded and never executes project code or install scripts.
+- Commands are executed with direct argv; no shell-string interpolation exists.
+- Process output is bounded and every capability has a hard timeout.
+- Release archives are extracted under strict rules: traversal, absolute paths,
+  symlinks, hardlinks and decompression bombs are rejected.
+- Provisioned runtimes record per-file hashes; `audit` and `diagnose` detect
+  modification.
+- Uninstall removes only what GrokInstall created.
+
+What GrokInstall **cannot** guarantee: that a source's contents are benign, that
+an upstream release is trustworthy when upstream publishes no checksum, or that a
+capability you authorized is safe to run.
+
+## CLI Reference
+
+```text
+Understand a source
+  inspect SOURCE           inspect a local directory or public GitHub repository
+  plan SOURCE --goal       evidence-backed integration plan, changes nothing
+  compare SOURCE --goal    compare strategies across twelve dimensions
+
+Install and use a capability
+  install SOURCE --goal     install a capability, provisioning only when safe
+  run NAME                  invoke a capability
+  test NAME                 smoke test a capability
+  list                      installed capabilities
+  info NAME                 full detail for one capability
+  capabilities              runnable capabilities, for GrokBot
+  grokbot NAME              the contract GrokBot should follow
+
+Operate an installation
+  diagnose NAME             why is this not working, with evidence
+  audit NAME                deterministic review of one integration
+  doctor                    environment and state checks with fixes
+  usage                     measured counters
+  uninstall NAME            remove only GrokInstall-owned resources
+
+Project
+  version                   version, commit and build information
 ```
-~/.grokinstall/
-├── config.json
-├── registry.json
-├── manifests/
-├── adapters/
-├── receipts/
-├── staging/
-├── cache/
-├── diagnostics/
-└── logs/
-    └── usage.jsonl
-```
 
-State is plain JSON/JSONL written atomically. `GROKINSTALL_HOME` or
-`--state-dir` overrides the location.
+`--json` is available on every command. `--dry-run` is available on `install`
+and `uninstall`. Exit codes: `0` success, `1` failure, `2` usage error.
 
-## Caching
-
-Deterministic inspection is cached by stable identity: repository plus commit
-SHA, or a content hash for non-git sources, combined with the inspection
-version and option fingerprint. Capability **execution results are never
-cached** — caching is a semantic decision, not a convenience.
-
-## Build and test
+## Diagnostics
 
 ```bash
-go test ./...
-go vet ./...
-go test -race ./...
-go build ./cmd/grokinstall
+grokinstall diagnose bat.search
 ```
 
-## License
+```text
+[CRITICAL]
+SYMPTOM
+  provisioned runtime was modified after installation
 
-MIT
+EVIDENCE
+  runtime: ~/.grokinstall/runtimes/bat.search
+  bin/bat: content changed
+
+ROOT CAUSE
+  files no longer match the hashes recorded at provisioning time
+
+CONFIDENCE
+  high
+
+FIX
+  reinstall the capability to restore a verified runtime
+
+VERIFY
+  grokinstall audit bat.search
+```
+
+```bash
+grokinstall audit bat.search
+```
+
+Audits manifest validity, receipt consistency, runtime ownership and integrity,
+permissions, checksum provenance, adapter integrity and the GrokBot contract.
+Severity is not inflated: a clean install produces no findings above `info`.
 
 ## Architecture
 
-```
-SOURCE
-  ↓
-NORMALIZE          source
-  ↓
-INSPECT            inspect          never executes project code
-  ↓
-EVIDENCE           evidence         every conclusion is backed
-  ↓
-CAPABILITIES       capability       only what evidence supports
-  ↓
-GOAL               strategy         deterministic interpretation
-  ↓
-STRATEGIES         strategy         ten candidates, always compared
-  ↓
-COMPARE            strategy         twelve qualitative dimensions
-  ↓
-TOOLCHAIN          toolchain        required / recommended / optional / irrelevant / missing / substitute
-  ↓
-PLAN               plan             draft manifest + bounded Context Pack
+```text
+source → inspect → evidence → capability → strategy → toolchain → plan
+                                                       ↓
+                             provision → runtime → verify → registry
 ```
 
-Supporting packages: `runtime` (universal capability execution), `knowledge`
-(bounded local search), `installer` (staged install), `receipt` (audit trail),
-`contextpack` (what a worker is allowed to see), `worker` (the external worker
-protocol), `manifest` (the capability contract), `registry` and `cache` (atomic
-JSON state), `diagnostics` (doctor), `usage` (JSONL observability), `cli`
-(commands).
+| Package | Responsibility |
+| --- | --- |
+| `source` | normalize a SOURCE reference into a canonical identity |
+| `inspect` | bounded, deterministic reading of a source; never executes it |
+| `evidence` | findings with confidence and backing evidence |
+| `capability` | capabilities that evidence actually supports |
+| `strategy` | ten candidate strategies across twelve dimensions |
+| `toolchain` | detect tools; resolve or report a substitution |
+| `provision` | policy, candidates, owned runtimes, provisioning |
+| `plan` | the Part 1 planning pipeline |
+| `runtime` | universal capability execution with safety bounds |
+| `knowledge` | bounded local index and deterministic search |
+| `manifest` | the capability contract |
+| `registry` | installed capabilities, plans, lifecycle states |
+| `cache` | content-addressed inspection cache and atomic state |
+| `diagnose` / `audit` | evidence-backed answers about an installation |
+| `worker` | external worker protocol, provider-agnostic |
+| `contextpack` | the bounded payload a worker may see |
+| `usage` | measured observability |
 
-## Sources
+## Installation
 
-Part 1 supports:
-
-- local repositories
-- public GitHub repositories (cloned into controlled temporary storage via
-  `git`; the commit SHA becomes the cache identity)
-
-GitLab URLs and other remote hosts are recognized and reported as unsupported
-rather than guessed. Website, API, MCP, Docker, package and plain-English idea
-sources are planned for later parts.
-
-## Detection
-
-Inspection detects CLI entrypoints, API/OpenAPI surfaces, MCP configuration,
-Docker and compose definitions, documentation, local services, tests, CI
-workflows, licenses, environment templates and lockfiles — without running a
-single line of the source.
-
-### Source files are untrusted data
-
-- README and source text never become instructions to GrokInstall.
-- Instruction-like text is recorded as evidence, never obeyed.
-- Install scripts, `postinstall` hooks, `sudo` usage and download commands are
-  surfaced for review, never executed.
-- Secret-like files are reported; their contents are never imported.
-- Symlinks are not followed, and inspection is bounded by file count, per-file
-  size and total size limits.
-
-## Toolchain resolution
-
-GrokInstall detects `git`, `gh`, `go`, `node`, `pnpm`, `npm`, `python`, `uv`,
-`docker`, `opencode`, `cursor`, `vercel` and `ollama`, and reports each as
-required, recommended, optional, irrelevant, missing, or satisfied by a
-substitute.
-
-**It never recommends installing everything.** OpenCode, Cursor, ChatGPT,
-Claude, Grok, Docker, Vercel and Ollama are optional capabilities, not
-prerequisites.
-
-## Context Packs
-
-A `ContextPack` carries only the goal, relevant source metadata, relevant
-manifest evidence, discovered capabilities, unresolved questions and
-constraints. It is the only structure handed to a reasoning or coding worker,
-which is what keeps whole repositories out of model context.
-
-## Worker protocol
-
-Any external execution — a local script, a CLI, or a future provider — uses the
-same JSON request/response contract:
-
-```json
-{ "task": "...", "input": {}, "context_pack": {}, "constraints": {} }
-```
-
-```json
-{ "ok": true, "result": {}, "artifacts": [], "warnings": [] }
-```
-
-The local subprocess worker is implemented in Part 1, with explicit timeouts
-and bounded stdout/stderr. OpenCode, Cursor, ChatGPT, Claude, Grok and Ollama
-are registered as recognized-but-not-integrated, so their absence is reported
-honestly instead of silently.
-
-## Capability manifest
-
-Every plan includes a draft manifest using schema `grokinstall/v1`: name,
-version, source, goal, capabilities, execution, inputs, outputs, grokbot, cache,
-security and provenance/evidence. The manifest is what GrokBot understands, not
-the implementation.
-
-## State
-
-```
-~/.grokinstall/
-├── config.json
-├── registry.json
-├── manifests/
-├── adapters/
-├── receipts/
-├── cache/
-├── diagnostics/
-└── logs/
-    └── usage.jsonl
-```
-
-State is plain JSON/JSONL written atomically. `GROKINSTALL_HOME` or
-`--state-dir` overrides the location.
-
-## Caching
-
-Deterministic inspection is cached by stable identity: repository plus commit
-SHA, or a content hash for non-git sources, combined with the inspection
-version and option fingerprint. Subjective planning decisions are not cached
-until their inputs are fully represented in a key.
-
-## Build and test
+**Release binary (recommended).** Download, verify the checksum, run:
 
 ```bash
-go test ./...
-go vet ./...
-go build ./cmd/grokinstall
+# macOS (Apple silicon)
+curl -LO https://github.com/M4G3LL4N0/grokinstall/releases/download/v0.1.0/grokinstall_v0.1.0_darwin_arm64.tar.gz
+curl -LO https://github.com/M4G3LL4N0/grokinstall/releases/download/v0.1.0/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar xzf grokinstall_v0.1.0_darwin_arm64.tar.gz
+sudo mv grokinstall /usr/local/bin/
 ```
+
+**Go install**
+
+```bash
+go install github.com/M4G3LL4N0/grokinstall/cmd/grokinstall@latest
+```
+
+**Build from source**
+
+```bash
+git clone https://github.com/M4G3LL4N0/grokinstall
+cd grokinstall
+go build -o grokinstall ./cmd/grokinstall
+```
+
+We deliberately do not lead with `curl ... | sh`. GrokInstall verifies release
+artifacts; its own installer should not be less careful.
+
+## Development
+
+```bash
+go test ./...          # unit and integration tests
+go vet ./...
+go test -race ./...
+go build ./...
+
+# live network tests are opt-in
+GROKINSTALL_NETWORK_TESTS=1 go test ./internal/inspect/ -run PublicGitHub
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md). Short version: v0.1 is this release, v0.2 targets
+the API/MCP/Docker runtime bridges and repair, v0.3 targets builder
+integrations.
+
+## Contributing
+
+Issues and pull requests are welcome. New provisioners and strategies must ship
+with adversarial tests — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

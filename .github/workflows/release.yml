@@ -1,0 +1,160 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release for"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Verification runs before anything is published. A release is never cut from
+  # an unverified tree.
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+      - run: go test -race ./...
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin_arm64
+            goos: darwin
+            goarch: arm64
+          - target: darwin_amd64
+            goos: darwin
+            goarch: amd64
+          - target: linux_amd64
+            goos: linux
+            goarch: amd64
+          - target: linux_arm64
+            goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$TAG" in
+            refs/tags/*) TAG="${TAG#refs/tags/}" ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          VERSION="${{ steps.ver.outputs.tag }}"
+          COMMIT="$(git rev-parse HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath \
+            -ldflags "-s -w \
+              -X github.com/M4G3LL4N0/grokinstall/internal/cli.Version=${VERSION} \
+              -X github.com/M4G3LL4N0/grokinstall/internal/cli.Commit=${COMMIT} \
+              -X github.com/M4G3LL4N0/grokinstall/internal/cli.BuildDate=${DATE}" \
+            -o "dist/grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}".go \
+            ./cmd/grokinstall
+      - name: Smoke test the binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          BIN="dist/grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}"
+          chmod +x "$BIN"
+          if [ "${{ matrix.goos }}" = "$(go env GOOS)" ]; then
+            "$BIN" version
+            "$BIN" --help > /dev/null
+            "$BIN" doctor || true
+          else
+            file "$BIN" || true
+          fi
+      - name: Package
+        run: |
+          cd dist
+          tar czf "../grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}.tar.gz" \
+            "grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}
+          path: grokinstall_${{ steps.ver.outputs.tag }}_${{ matrix.target }}.tar.gz
+
+  checksums:
+    name: checksums
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          find . -name '*.tar.gz' -type f -print0 | xargs -0 shasum -a 256 > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS_${{ github.event.inputs.tag || github.ref_name }}
+          path: dist/SHA256SUMS
+
+  publish:
+    name: publish release
+    needs: [build, checksums]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Flatten artifacts
+        run: |
+          cd dist
+          find . -mindepth 2 -name '*.tar.gz' -exec mv {} . \; 2>/dev/null || true
+          find . -mindepth 2 -name 'SHA256SUMS' -exec mv {} . \; 2>/dev/null || true
+          ls -la
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          body: |
+            ## Verify your download
+
+            ```bash
+            shasum -a 256 -c SHA256SUMS --ignore-missing
+            ```
+
+            GrokInstall publishes a SHA256SUMS file for its own release
+            artifacts, and dogfoods its own philosophy: verify what you download.
+            An artifact is only verified against a published checksum.

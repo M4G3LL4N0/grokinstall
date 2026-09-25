@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
 )
 
 // Schema is the state schema identifier.

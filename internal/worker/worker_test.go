@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"grokinstall/internal/contextpack"
+	"github.com/M4G3LL4N0/grokinstall/internal/contextpack"
 )
 
 func writeScript(t *testing.T, name, body string) string {

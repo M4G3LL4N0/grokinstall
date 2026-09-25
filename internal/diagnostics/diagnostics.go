@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"grokinstall/internal/registry"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 // Status is the health of one check.

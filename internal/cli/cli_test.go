@@ -213,3 +213,33 @@ func TestVersionFlag(t *testing.T) {
 		t.Fatalf("version output unexpected: %s", out.String())
 	}
 }
+
+func TestVersionCommandReportsDevelopmentBuild(t *testing.T) {
+	out, _, err := run(t, "version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A development build must say so rather than claiming to be a release.
+	if !strings.Contains(out, "development build") {
+		t.Fatalf("a development build should identify itself: %s", out)
+	}
+}
+
+func TestVersionJSON(t *testing.T) {
+	out, _, err := run(t, "version", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Version     string `json:"version"`
+		GoVersion   string `json:"go_version"`
+		Platform    string `json:"platform"`
+		Development bool   `json:"development"`
+	}
+	if err := json.Unmarshal([]byte(out), &info); err != nil {
+		t.Fatalf("version --json invalid: %v", err)
+	}
+	if info.Version == "" || info.GoVersion == "" || info.Platform == "" {
+		t.Fatalf("version JSON incomplete: %+v", info)
+	}
+}

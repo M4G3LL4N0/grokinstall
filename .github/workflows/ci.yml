@@ -4,13 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: test (go ${{ matrix.go }} on ${{ matrix.os }})
+    name: test ${{ matrix.os }} / go ${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -19,30 +24,28 @@ jobs:
         go: ["1.24", "1.25"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-      - name: Build
-        run: go build ./...
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
+      - name: Build
+        run: go build ./...
       - name: Test
         run: go test ./...
-      - name: Test with race detector
+      - name: Test (race)
         run: go test -race ./...
-
-  network:
-    name: live public source inspection
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-      - name: Inspect a public GitHub repository
-        run: go test ./internal/inspect/ -run TestPublicGitHubSource -v
-        env:
-          GROKINSTALL_NETWORK_TESTS: "1"
+      - name: Adversarial suite
+        run: go test ./internal/adversarial/ -v
 
   dogfood:
     name: dogfood
@@ -52,13 +55,31 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - name: Build the CLI
-        run: go build -o bin/grokinstall-bin ./cmd/grokinstall
-      - name: Doctor
-        run: ./bin/grokinstall-bin doctor
-      - name: Inspect itself
-        run: ./bin/grokinstall-bin inspect .
-      - name: Plan a capability for itself
-        run: ./bin/grokinstall-bin plan . --goal "Allow GrokBot to diagnose GrokInstall"
-      - name: Compare strategies
-        run: ./bin/grokinstall-bin compare . --goal "Allow GrokBot to diagnose GrokInstall"
+      - name: Build
+        run: go build -o grokinstall ./cmd/grokinstall
+      - name: doctor
+        run: ./grokinstall doctor
+      - name: inspect itself
+        run: ./grokinstall inspect .
+      - name: plan itself
+        run: ./grokinstall plan . --goal "Allow GrokBot to diagnose GrokInstall"
+      - name: compare itself
+        run: ./grokinstall compare . --goal "Allow GrokBot to diagnose GrokInstall"
+      - name: version
+        run: ./grokinstall version --json
+
+  # Live network tests are opt-in and never block ordinary CI. Run them from the
+  # Actions interface, or locally with GROKINSTALL_NETWORK_TESTS=1.
+  network:
+    name: live network (manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Public GitHub inspection
+        run: go test ./internal/inspect/ -run PublicGitHubSource -v
+        env:
+          GROKINSTALL_NETWORK_TESTS: "1"

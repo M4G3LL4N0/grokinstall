@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
 )
 
 // Kind is the kind of surface a capability is reached through.

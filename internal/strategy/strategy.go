@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"grokinstall/internal/capability"
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/capability"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 // ID identifies an integration strategy.

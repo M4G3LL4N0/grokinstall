@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/provision/github"
-	"grokinstall/internal/provision/gobuild"
-	"grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision/github"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision/gobuild"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
 )
 
 // Engine discovers and performs provisioning for a required executable.

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/archive"
+	"github.com/M4G3LL4N0/grokinstall/internal/archive"
 )
 
 // Default bounds for a release artifact.

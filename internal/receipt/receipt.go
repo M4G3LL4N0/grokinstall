@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
 )
 
 // Schema identifies the receipt format.

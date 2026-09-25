@@ -7,10 +7,10 @@ package contextpack
 import (
 	"encoding/json"
 
-	"grokinstall/internal/capability"
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/redact"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/capability"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/redact"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 // Schema identifies the context pack format.

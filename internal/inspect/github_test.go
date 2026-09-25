@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 // makeGitRepo creates a real local git repository that behaves like a public

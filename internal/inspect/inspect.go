@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 // Schema identifies an inspection result.

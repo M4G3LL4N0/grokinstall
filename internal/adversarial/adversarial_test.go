@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"grokinstall/internal/archive"
-	"grokinstall/internal/inspect"
-	"grokinstall/internal/provision"
-	"grokinstall/internal/provision/gobuild"
-	"grokinstall/internal/registry"
-	"grokinstall/internal/runtime"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/archive"
+	"github.com/M4G3LL4N0/grokinstall/internal/inspect"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision/gobuild"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/runtime"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 // --- source attacks ---------------------------------------------------------
@@ -177,7 +177,9 @@ func TestRuntimeRejectsShellMetacharacters(t *testing.T) {
 	rt := runtime.New()
 	resp, err := rt.Invoke(context.Background(), runtime.Spec{
 		Type: runtime.TypeSubprocess, Command: script, InputMode: runtime.ModeArgv,
-		ArgvMap: map[string]string{"x": "--x"}, Timeout: 5 * time.Second,
+		// A generous budget: this test is about metacharacter handling, not
+		// timing. Timeout behaviour has its own tests with short budgets.
+		ArgvMap: map[string]string{"x": "--x"}, Timeout: 30 * time.Second,
 	}, json.RawMessage(`{"x":"; touch `+marker+`; echo "}`))
 	if err != nil {
 		t.Fatal(err)

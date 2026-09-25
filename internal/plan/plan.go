@@ -11,15 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/capability"
-	"grokinstall/internal/contextpack"
-	"grokinstall/internal/evidence"
-	"grokinstall/internal/inspect"
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/source"
-	"grokinstall/internal/strategy"
-	"grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/capability"
+	"github.com/M4G3LL4N0/grokinstall/internal/contextpack"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/inspect"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/strategy"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
 )
 
 // Schema identifies a plan document.

@@ -15,17 +15,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"grokinstall/internal/diagnostics"
-	"grokinstall/internal/inspect"
-	"grokinstall/internal/plan"
-	"grokinstall/internal/registry"
-	"grokinstall/internal/source"
-	"grokinstall/internal/toolchain"
-	"grokinstall/internal/usage"
+	"github.com/M4G3LL4N0/grokinstall/internal/diagnostics"
+	"github.com/M4G3LL4N0/grokinstall/internal/inspect"
+	"github.com/M4G3LL4N0/grokinstall/internal/plan"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/toolchain"
+	"github.com/M4G3LL4N0/grokinstall/internal/usage"
 )
-
-// Version is the GrokInstall version reported by --version.
-const Version = "0.2.0"
 
 type globalFlags struct {
 	jsonOutput bool
@@ -39,9 +36,39 @@ func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "grokinstall",
 		Short: "Universal installation intelligence for GrokBot",
-		Long: "GrokInstall inspects a source, identifies the capability GrokBot actually needs,\n" +
-			"compares integration approaches, and resolves the smallest useful toolchain.\n\n" +
-			"Install the capability, not the complexity.",
+		Long: `GrokInstall is the integration guru for GrokBot.
+
+Give it a source and a goal. It inspects the source, discovers the capability
+GrokBot actually needs, compares integration strategies, provisions the
+safest useful route, verifies the result, and hands GrokBot a tiny capability
+contract instead of a repository.
+
+Install the capability, not the complexity.
+
+Examples:
+  # Inspect a public GitHub repository
+  grokinstall inspect https://github.com/sharkdp/bat
+
+  # Compare integration strategies for a goal
+  grokinstall compare https://github.com/sharkdp/bat \
+    --goal "Let GrokBot use bat to inspect text files"
+
+  # Install the capability (provisioning only if it is safe to do so)
+  grokinstall install https://github.com/sharkdp/bat \
+    --goal "Let GrokBot use bat to inspect text files"
+
+  # What can GrokBot call?
+  grokinstall capabilities
+
+  # The contract for one capability
+  grokinstall grokbot bat.search
+
+  # Call it
+  grokinstall run bat.search --input '{}'
+
+  # When something is wrong
+  grokinstall diagnose bat.search
+  grokinstall audit bat.search`,
 		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -52,6 +79,15 @@ func NewRoot() *cobra.Command {
 	// Bind directly to the shared struct so values are read after parsing.
 	root.PersistentFlags().BoolVar(&g.jsonOutput, "json", false, "emit machine-readable JSON")
 	root.PersistentFlags().StringVar(&g.stateDir, "state-dir", "", "override the GrokInstall state directory (default ~/.grokinstall)")
+	root.SetVersionTemplate("grokinstall {{.Version}}\n")
+
+	// Command groups keep a long command list understandable without the README.
+	root.AddGroup(
+		&cobra.Group{ID: "understand", Title: "Understand a source:"},
+		&cobra.Group{ID: "install", Title: "Install and use a capability:"},
+		&cobra.Group{ID: "operate", Title: "Operate an installation:"},
+		&cobra.Group{ID: "project", Title: "Project:"},
+	)
 
 	root.AddCommand(
 		newInspectCommand(g),
@@ -69,6 +105,7 @@ func NewRoot() *cobra.Command {
 		newUninstallCommand(g),
 		newDiagnoseCommand(g),
 		newAuditCommand(g),
+		newVersionCommand(g),
 	)
 	return root
 }
@@ -111,8 +148,12 @@ func writeJSON(cmd *cobra.Command, v any) error {
 
 func newInspectCommand(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "inspect SOURCE",
-		Short: "Inspect a local directory or public GitHub repository",
+		Use:     "inspect SOURCE",
+		Short:   "Inspect a local directory or public GitHub repository",
+		GroupID: "understand",
+		Example: `  grokinstall inspect https://github.com/sharkdp/bat
+  grokinstall inspect ./my-project
+  grokinstall inspect ./my-project --json`,
 		Long: "Reads a source deterministically and reports evidence-backed findings.\n" +
 			"Inspection never executes project code, install scripts or build steps.",
 		Args: cobra.ExactArgs(1),
@@ -223,8 +264,10 @@ func cacheWord(hit bool) string {
 func newPlanCommand(g *globalFlags) *cobra.Command {
 	var goal string
 	cmd := &cobra.Command{
-		Use:   "plan SOURCE --goal \"...\"",
-		Short: "Build an evidence-backed integration plan",
+		Use:     "plan SOURCE --goal \"...\"",
+		Short:   "Build an evidence-backed integration plan",
+		GroupID: "understand",
+		Example: `  grokinstall plan ./my-tool --goal "Let GrokBot run my tool"`,
 		Long: "Runs the Part 1 pipeline end to end:\n" +
 			"normalize, inspect, collect evidence, discover capabilities, interpret the goal,\n" +
 			"generate strategies, compare, resolve the toolchain, plan.\n\n" +
@@ -333,8 +376,11 @@ func renderPlan(w io.Writer, p *plan.Plan) {
 func newCompareCommand(g *globalFlags) *cobra.Command {
 	var goal string
 	cmd := &cobra.Command{
-		Use:   "compare SOURCE --goal \"...\"",
-		Short: "Compare integration strategies across twelve dimensions",
+		Use:     "compare SOURCE --goal \"...\"",
+		Short:   "Compare integration strategies across twelve dimensions",
+		GroupID: "understand",
+		Example: `  grokinstall compare https://github.com/sharkdp/bat \
+    --goal "Let GrokBot use bat to inspect text files"`,
 		Long: "Compares every candidate strategy on GrokBot footprint, feature coverage,\n" +
 			"local execution, external cost, latency, maintenance, security, privacy,\n" +
 			"cacheability, dependencies, implementation effort and portability.\n" +
@@ -423,9 +469,11 @@ func renderComparison(w io.Writer, p *plan.Plan) {
 
 func newDoctorCommand(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Check the local environment and state, with actionable fixes",
-		Args:  cobra.NoArgs,
+		Use:     "doctor",
+		Short:   "Check the local environment and state, with actionable fixes",
+		GroupID: "operate",
+		Example: "  grokinstall doctor",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, err := g.state()
 			if err != nil {
@@ -483,8 +531,10 @@ func renderDoctor(w io.Writer, rep *diagnostics.Report) {
 
 func newUsageCommand(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "usage",
-		Short: "Show what GrokInstall has actually done",
+		Use:     "usage",
+		Short:   "Show what GrokInstall has actually done",
+		GroupID: "operate",
+		Example: "  grokinstall usage --json",
 		Long: "Reports measured usage only: operations, cache hits and misses, context\n" +
 			"pack sizes and contract sizes. No token savings are estimated.",
 		Args: cobra.NoArgs,

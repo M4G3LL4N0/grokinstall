@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/strategy"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/strategy"
 )
 
 // Entry is one installed capability. It points at a manifest rather than

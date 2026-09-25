@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/provision"
-	"grokinstall/internal/receipt"
-	"grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision"
+	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
 )
 
 func newEngine(t *testing.T) *Engine {

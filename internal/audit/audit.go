@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/manifest"
-	"grokinstall/internal/provision"
-	"grokinstall/internal/receipt"
-	"grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision"
+	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
 )
 
 // Severity ranks audit findings. Levels are used honestly: an audit that calls

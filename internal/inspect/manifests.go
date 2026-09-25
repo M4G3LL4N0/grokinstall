@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
 )
 
 // parseManifests walks recorded files and extracts facts from the manifests

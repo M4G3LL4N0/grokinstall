@@ -10,19 +10,23 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"grokinstall/internal/audit"
-	"grokinstall/internal/diagnose"
-	"grokinstall/internal/installer"
-	"grokinstall/internal/provision"
-	"grokinstall/internal/registry"
-	"grokinstall/internal/usage"
+	"github.com/M4G3LL4N0/grokinstall/internal/audit"
+	"github.com/M4G3LL4N0/grokinstall/internal/diagnose"
+	"github.com/M4G3LL4N0/grokinstall/internal/installer"
+	"github.com/M4G3LL4N0/grokinstall/internal/provision"
+	"github.com/M4G3LL4N0/grokinstall/internal/registry"
+	"github.com/M4G3LL4N0/grokinstall/internal/usage"
 )
 
 func newDiagnoseCommand(g *globalFlags) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "diagnose [NAME]",
-		Short: "Explain why a capability is not working, using direct evidence",
+		Use:     "diagnose [NAME]",
+		Short:   "Explain why a capability is not working, using direct evidence",
+		GroupID: "operate",
+		Example: `  grokinstall diagnose bat.search
+  grokinstall diagnose --all
+  grokinstall diagnose bat.search --json`,
 		Long: "Reports the symptom, the evidence that was observed, the probable root\n" +
 			"cause, a confidence level, the affected component, the smallest fix and the\n" +
 			"command that verifies the fix.\n\n" +
@@ -90,8 +94,11 @@ func allHealthy(reports []diagnose.Report) bool {
 func newAuditCommand(g *globalFlags) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "audit [NAME]",
-		Short: "Inspect an installed integration and report evidence-backed findings",
+		Use:     "audit [NAME]",
+		Short:   "Inspect an installed integration and report evidence-backed findings",
+		GroupID: "operate",
+		Example: `  grokinstall audit bat.search
+  grokinstall audit --all`,
 		Long: "A deterministic review of one integration: manifest validity, receipt\n" +
 			"consistency, runtime ownership and integrity, source identity, permissions,\n" +
 			"security approvals, checksum provenance, adapter integrity and the GrokBot\n" +

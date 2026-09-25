@@ -3,7 +3,7 @@ package capability
 import (
 	"testing"
 
-	"grokinstall/internal/evidence"
+	"github.com/M4G3LL4N0/grokinstall/internal/evidence"
 )
 
 func evidenceSet(items ...evidence.Item) *evidence.Set {

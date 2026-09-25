@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"grokinstall/internal/cache"
-	"grokinstall/internal/source"
+	"github.com/M4G3LL4N0/grokinstall/internal/cache"
+	"github.com/M4G3LL4N0/grokinstall/internal/source"
 )
 
 // GitRunner abstracts git so tests can simulate a missing or failing git.
