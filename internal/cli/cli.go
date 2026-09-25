@@ -61,14 +61,14 @@ Examples:
   grokinstall capabilities
 
   # The contract for one capability
-  grokinstall grokbot bat.search
+  grokinstall grokbot bat.review
 
   # Call it
-  grokinstall run bat.search --input '{}'
+  grokinstall run bat.review --input '{}'
 
   # When something is wrong
-  grokinstall diagnose bat.search
-  grokinstall audit bat.search`,
+  grokinstall diagnose bat.review
+  grokinstall audit bat.review`,
 		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

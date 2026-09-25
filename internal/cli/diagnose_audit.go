@@ -24,9 +24,9 @@ func newDiagnoseCommand(g *globalFlags) *cobra.Command {
 		Use:     "diagnose [NAME]",
 		Short:   "Explain why a capability is not working, using direct evidence",
 		GroupID: "operate",
-		Example: `  grokinstall diagnose bat.search
+		Example: `  grokinstall diagnose bat.review
   grokinstall diagnose --all
-  grokinstall diagnose bat.search --json`,
+  grokinstall diagnose bat.review --json`,
 		Long: "Reports the symptom, the evidence that was observed, the probable root\n" +
 			"cause, a confidence level, the affected component, the smallest fix and the\n" +
 			"command that verifies the fix.\n\n" +
@@ -97,7 +97,7 @@ func newAuditCommand(g *globalFlags) *cobra.Command {
 		Use:     "audit [NAME]",
 		Short:   "Inspect an installed integration and report evidence-backed findings",
 		GroupID: "operate",
-		Example: `  grokinstall audit bat.search
+		Example: `  grokinstall audit bat.review
   grokinstall audit --all`,
 		Long: "A deterministic review of one integration: manifest validity, receipt\n" +
 			"consistency, runtime ownership and integrity, source identity, permissions,\n" +

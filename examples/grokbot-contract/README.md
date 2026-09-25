@@ -6,20 +6,20 @@ receives for a real capability.
 **Produce it**
 
 ```bash
-grokinstall grokbot bat.search
+grokinstall grokbot bat.review
 ```
 
-**Measured output for the flagship `bat` run: 443 bytes.**
+**Measured output for the flagship `bat` run: 432 bytes.**
 
 ```text
 CAPABILITY
-bat.search
+bat.review
 
 USE WHEN
 the user wants GrokBot to: Let GrokBot use bat to inspect text files
 
 CALL
-grokinstall run bat.search --input '<json>'
+grokinstall run bat.review --input '<json>'
 
 INPUT
 input: object - JSON object passed to the capability on stdin
@@ -33,7 +33,7 @@ invoking this capability
 
 ON FAILURE
 Run:
-grokinstall diagnose bat.search
+grokinstall diagnose bat.review
 ```
 
 **What it contains**
@@ -67,7 +67,7 @@ grokinstall diagnose NAME --json
 **Why the size matters**
 
 The point of the contract is that GrokBot's footprint is bounded by the
-capability, not by the repository. A 443-byte contract replacing an entire
+capability, not by the repository. A 432-byte contract replacing an entire
 project is the product working as intended.
 
 The exact number varies with the capability's name, goal and input schema. The

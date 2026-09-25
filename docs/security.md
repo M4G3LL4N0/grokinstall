@@ -67,8 +67,8 @@ Provisioned executables live under `~/.grokinstall/runtimes/`, never on the
 global `PATH`. Every file is hashed at provisioning time.
 
 ```bash
-grokinstall audit bat.search     # compares hashes with disk
-grokinstall diagnose bat.search  # reports modification as critical
+grokinstall audit bat.review     # compares hashes with disk
+grokinstall diagnose bat.review  # reports modification as critical
 ```
 
 ## State integrity

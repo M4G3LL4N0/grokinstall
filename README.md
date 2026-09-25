@@ -62,10 +62,10 @@ grokinstall install https://github.com/sharkdp/bat \
 grokinstall capabilities
 
 # The contract for one capability
-grokinstall grokbot bat.search
+grokinstall grokbot bat.review
 
 # Call it
-grokinstall run bat.search --input '{}'
+grokinstall run bat.review --input '{}'
 ```
 
 ## How It Works
@@ -168,7 +168,7 @@ RESULT
 A verified, runnable capability.
 
 GROKBOT RECEIVES
-A compact contract (measured at 443 bytes in the verified run), not the
+A compact contract (measured at 432 bytes in the verified run), not the
 repository.
 
 UNINSTALL
@@ -316,7 +316,7 @@ and `uninstall`. Exit codes: `0` success, `1` failure, `2` usage error.
 ## Diagnostics
 
 ```bash
-grokinstall diagnose bat.search
+grokinstall diagnose bat.review
 ```
 
 ```text
@@ -325,7 +325,7 @@ SYMPTOM
   provisioned runtime was modified after installation
 
 EVIDENCE
-  runtime: ~/.grokinstall/runtimes/bat.search
+  runtime: ~/.grokinstall/runtimes/bat.review
   bin/bat: content changed
 
 ROOT CAUSE
@@ -338,11 +338,11 @@ FIX
   reinstall the capability to restore a verified runtime
 
 VERIFY
-  grokinstall audit bat.search
+  grokinstall audit bat.review
 ```
 
 ```bash
-grokinstall audit bat.search
+grokinstall audit bat.review
 ```
 
 Audits manifest validity, receipt consistency, runtime ownership and integrity,

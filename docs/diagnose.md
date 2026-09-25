@@ -15,10 +15,10 @@ Every finding carries seven fields:
 ```text
 [CRITICAL]
 SYMPTOM
-  bat.search cannot execute
+  bat.review cannot execute
 
 EVIDENCE
-  manifest target: ~/.grokinstall/runtimes/bat.search/bin/bat
+  manifest target: ~/.grokinstall/runtimes/bat.review/bin/bat
   filesystem: target missing
 
 ROOT CAUSE
@@ -34,7 +34,7 @@ FIX
   reinstall the capability to re-provision the executable
 
 VERIFY
-  grokinstall test bat.search
+  grokinstall test bat.review
 ```
 
 `CONFIDENCE` is earned. Direct filesystem evidence is `high`; a weak signal is
@@ -59,25 +59,25 @@ finding is usually the thing to fix.
 ## In automation
 
 ```bash
-grokinstall diagnose bat.search --json
+grokinstall diagnose bat.review --json
 ```
 
 ```json
 {
   "reports": [
     {
-      "capability": "bat.search",
+      "capability": "bat.review",
       "healthy": false,
       "findings": [
         {
           "severity": "critical",
           "symptom": "provisioned runtime was modified after installation",
-          "evidence": ["runtime: ~/.grokinstall/runtimes/bat.search", "bin/bat: content changed"],
+          "evidence": ["runtime: ~/.grokinstall/runtimes/bat.review", "bin/bat: content changed"],
           "root_cause": "files no longer match the hashes recorded at provisioning time",
           "confidence": "high",
           "component": "runtime",
           "smallest_fix": "reinstall the capability to restore a verified runtime",
-          "verification_command": "grokinstall audit bat.search"
+          "verification_command": "grokinstall audit bat.review"
         }
       ]
     }

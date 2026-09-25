@@ -11,7 +11,7 @@ grokinstall list
 
 ```text
 NAME        STRATEGY    SUPPORT    STATE    STATUS
-bat.search  cli_bridge  supported  ready    ready
+bat.review  cli_bridge  supported  ready    ready
 ```
 
 ## Runnable capabilities
@@ -21,9 +21,9 @@ grokinstall capabilities
 ```
 
 ```text
-bat.search  [ready]
+bat.review  [ready]
   the user wants GrokBot to use bat to inspect text files
-  call: grokinstall run bat.search --input '<json>'
+  call: grokinstall run bat.review --input '<json>'
 ```
 
 By default this shows only **runnable** capabilities, so GrokBot is never handed
@@ -53,7 +53,7 @@ A plan is not an installed capability. Plan-only strategies live in
 ```json
 {
   "schema": "grokinstall/v1",
-  "name": "bat.search",
+  "name": "bat.review",
   "version": "1",
   "source": "github.com/sharkdp/bat",
   "goal": "Let GrokBot use bat to inspect text files",
@@ -63,7 +63,7 @@ A plan is not an installed capability. Plan-only strategies live in
   "execution": {
     "type": "subprocess",
     "supported": true,
-    "command": "/Users/you/.grokinstall/runtimes/bat.search/bin/bat",
+    "command": "/Users/you/.grokinstall/runtimes/bat.review/bin/bat",
     "input_mode": "stdin_json",
     "timeout_ms": 30000,
     "max_output_bytes": 1048576
@@ -85,8 +85,8 @@ It contains no source code, no file listing and no documentation text.
 Input arrives as one JSON object:
 
 ```bash
-grokinstall run bat.search --input '{"query":"TODO"}'
-echo '{"query":"TODO"}' | grokinstall run bat.search
+grokinstall run bat.review --input '{"query":"TODO"}'
+echo '{"query":"TODO"}' | grokinstall run bat.review
 ```
 
 Output uses one envelope:

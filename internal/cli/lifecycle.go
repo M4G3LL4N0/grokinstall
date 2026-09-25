@@ -327,8 +327,8 @@ func newRunCommand(g *globalFlags) *cobra.Command {
 			"Input may be given with --input or piped on stdin. The capability command is\n" +
 			"executed with direct argv, a controlled environment, a timeout and bounded output.",
 		GroupID: "install",
-		Example: `  grokinstall run bat.search --input '{"query":"TODO"}'
-  echo '{"query":"TODO"}' | grokinstall run bat.search`,
+		Example: `  grokinstall run bat.review --input '{"query":"TODO"}'
+  echo '{"query":"TODO"}' | grokinstall run bat.review`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ins, reg, err := g.installerFor()
@@ -408,7 +408,7 @@ func newTestCommand(g *globalFlags) *cobra.Command {
 		Use:     "test NAME",
 		Short:   "Run a smoke test against an installed capability",
 		GroupID: "install",
-		Example: "  grokinstall test bat.search",
+		Example: "  grokinstall test bat.review",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ins, reg, err := g.installerFor()
@@ -493,7 +493,7 @@ func newInfoCommand(g *globalFlags) *cobra.Command {
 		Use:     "info NAME",
 		Short:   "Show everything worth knowing about one capability",
 		GroupID: "install",
-		Example: "  grokinstall info bat.search",
+		Example: "  grokinstall info bat.review",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ins, _, err := g.installerFor()
@@ -648,8 +648,8 @@ func newGrokbotCommand(g *globalFlags) *cobra.Command {
 		Use:     "grokbot NAME",
 		Short:   "Generate the smallest sufficient GrokBot contract for a capability",
 		GroupID: "install",
-		Example: `  grokinstall grokbot bat.search
-  grokinstall grokbot bat.search --json`,
+		Example: `  grokinstall grokbot bat.review
+  grokinstall grokbot bat.review --json`,
 		Long: "Renders a contract derived mechanically from the manifest: when to use it,\n" +
 			"how to call it, what goes in, what comes out, and what not to do.\n\n" +
 			"The contract contains no repository content, file listings or documentation.",
@@ -702,8 +702,8 @@ func newUninstallCommand(g *globalFlags) *cobra.Command {
 		Use:     "uninstall NAME",
 		Short:   "Remove a capability integration, leaving upstream data untouched",
 		GroupID: "operate",
-		Example: `  grokinstall uninstall bat.search
-  grokinstall uninstall bat.search --dry-run`,
+		Example: `  grokinstall uninstall bat.review
+  grokinstall uninstall bat.review --dry-run`,
 		Long: "Removes only what GrokInstall created: its manifest, its adapter and its\n" +
 			"registry entry. Upstream repositories, user data and unrelated files are\n" +
 			"never touched. The receipt is preserved as the audit trail.",

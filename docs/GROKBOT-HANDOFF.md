@@ -28,16 +28,16 @@ $ grokinstall capabilities --json
 {
   "capabilities": [
     {
-      "name": "bat.search",
+      "name": "bat.review",
       "description": "the user wants GrokBot to use bat to inspect text files",
       "strategy": "cli_bridge",
       "support": "supported",
       "state": "ready",
       "runnable": true,
-      "call": "grokinstall run bat.search --input '<json>'",
+      "call": "grokinstall run bat.review --input '<json>'",
       "input":  { "fields": [] },
       "output": { "fields": [] },
-      "grokbot_contract": "CAPABILITY\nbat.search\n..."
+      "grokbot_contract": "CAPABILITY\nbat.review\n..."
     }
   ],
   "total": 1,
@@ -55,18 +55,18 @@ implementation details GrokBot should not depend on.
 ## 2. Read the contract
 
 ```bash
-$ grokinstall grokbot bat.search
+$ grokinstall grokbot bat.review
 ```
 
 ```text
 CAPABILITY
-bat.search
+bat.review
 
 USE WHEN
 the user wants GrokBot to: Let GrokBot use bat to inspect text files
 
 CALL
-grokinstall run bat.search --input '<json>'
+grokinstall run bat.review --input '<json>'
 
 INPUT
 input: object - JSON object passed to the capability on stdin
@@ -80,10 +80,10 @@ invoking this capability
 
 ON FAILURE
 Run:
-grokinstall diagnose bat.search
+grokinstall diagnose bat.review
 ```
 
-The contract is bounded: 8192 bytes hard cap, 443 bytes measured for the
+The contract is bounded: 8192 bytes hard cap, 432 bytes measured for the
 flagship `bat` run. It contains only capability, when to use it, how to call
 it, input, output, limitations and failure recovery. It never contains secrets,
 local paths, README instructions, receipt internals or source snippets.
@@ -91,7 +91,7 @@ local paths, README instructions, receipt internals or source snippets.
 ## 3. Call
 
 ```bash
-grokinstall run bat.search --input '{"query":"TODO"}'
+grokinstall run bat.review --input '{"query":"TODO"}'
 ```
 
 Input is one JSON object, via `--input` or stdin. Output is one envelope:
@@ -136,17 +136,17 @@ command. Forward the `smallest_fix` to the user; do not improvise a repair.
 ```json
 {
   "reports": [{
-    "capability": "bat.search",
+    "capability": "bat.review",
     "healthy": false,
     "findings": [{
       "severity": "critical",
       "symptom": "provisioned runtime was modified after installation",
-      "evidence": ["runtime: ~/.grokinstall/runtimes/bat.search", "bin/bat: content changed"],
+      "evidence": ["runtime: ~/.grokinstall/runtimes/bat.review", "bin/bat: content changed"],
       "root_cause": "files no longer match the hashes recorded at provisioning time",
       "confidence": "high",
       "component": "runtime",
       "smallest_fix": "reinstall the capability to restore a verified runtime",
-      "verification_command": "grokinstall audit bat.search"
+      "verification_command": "grokinstall audit bat.review"
     }]
   }]
 }
@@ -158,7 +158,7 @@ command. Forward the `smallest_fix` to the user; do not improvise a repair.
    does not expose what the user needs, say so and suggest an install goal.
 2. **Trust `runnable`, not existence.** A listed capability may be broken; the
    default capability list already filters this.
-3. **Do not re-implement a capability.** If `bat.search` exists, call it.
+3. **Do not re-implement a capability.** If `bat.review` exists, call it.
 4. **Forward failures with their fix.** `diagnose` is the answer to "why is this
    broken"; do not guess.
 5. **Pass input through, do not transform it.** The capability owns its own

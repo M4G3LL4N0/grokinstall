@@ -21,13 +21,13 @@ $ grokinstall capabilities --json
 {
   "capabilities": [
     {
-      "name": "bat.search",
+      "name": "bat.review",
       "description": "the user wants GrokBot to use bat to inspect text files",
       "strategy": "cli_bridge",
       "support": "supported",
       "state": "ready",
       "runnable": true,
-      "call": "grokinstall run bat.search --input '<json>'",
+      "call": "grokinstall run bat.review --input '<json>'",
       "input":  { "fields": [] },
       "output": { "fields": [] }
     }
@@ -43,18 +43,18 @@ never offered as callable.
 ## The contract
 
 ```bash
-$ grokinstall grokbot bat.search
+$ grokinstall grokbot bat.review
 ```
 
 ```text
 CAPABILITY
-bat.search
+bat.review
 
 USE WHEN
 the user wants GrokBot to: Let GrokBot use bat to inspect text files
 
 CALL
-grokinstall run bat.search --input '<json>'
+grokinstall run bat.review --input '<json>'
 
 INPUT
 input: object - JSON object passed to the capability on stdin
@@ -68,10 +68,10 @@ invoking this capability
 
 ON FAILURE
 Run:
-grokinstall diagnose bat.search
+grokinstall diagnose bat.review
 ```
 
-The measured contract for the flagship `bat` run was **443 bytes**. The hard
+The measured contract for the flagship `bat` run was **432 bytes**. The hard
 cap is 8192; field lists are capped too.
 
 The contract contains only: capability, when to use it, how to call it, input,
@@ -81,8 +81,8 @@ source paths, README instructions, receipt internals or source snippets.
 ## Calling
 
 ```bash
-grokinstall run bat.search --input '{"query":"TODO"}'
-echo '{"query":"TODO"}' | grokinstall run bat.search
+grokinstall run bat.review --input '{"query":"TODO"}'
+echo '{"query":"TODO"}' | grokinstall run bat.review
 ```
 
 ```json
@@ -92,25 +92,25 @@ echo '{"query":"TODO"}' | grokinstall run bat.search
 ## Failure
 
 ```bash
-grokinstall diagnose bat.search --json
+grokinstall diagnose bat.review --json
 ```
 
 ```json
 {
   "reports": [
     {
-      "capability": "bat.search",
+      "capability": "bat.review",
       "healthy": false,
       "findings": [
         {
           "severity": "critical",
           "symptom": "provisioned runtime was modified after installation",
-          "evidence": ["runtime: ~/.grokinstall/runtimes/bat.search", "bin/bat: content changed"],
+          "evidence": ["runtime: ~/.grokinstall/runtimes/bat.review", "bin/bat: content changed"],
           "root_cause": "files no longer match the hashes recorded at provisioning time",
           "confidence": "high",
           "component": "runtime",
           "smallest_fix": "reinstall the capability to restore a verified runtime",
-          "verification_command": "grokinstall audit bat.search"
+          "verification_command": "grokinstall audit bat.review"
         }
       ]
     }

@@ -99,7 +99,7 @@ $ grokinstall install https://github.com/sharkdp/bat \
 
 Source:   github.com/sharkdp/bat
 Strategy: cli_bridge (supported)
-Runtime:  ~/.grokinstall/runtimes/bat.search (GrokInstall-owned)
+Runtime:  ~/.grokinstall/runtimes/bat.review (GrokInstall-owned)
 
 Provisioning
   method:    github_release
