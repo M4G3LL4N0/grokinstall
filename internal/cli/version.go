@@ -1,13 +1,16 @@
 package cli
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"strings"
+)
 
 // Build information. These values are supplied at link time with -ldflags so a
 // release binary reports exactly what it was built from, and a development
 // build says so honestly rather than pretending to be a release.
 var (
-	// Version is the semantic version, e.g. v0.1.0.
-	Version = "dev"
+	// Version is the semantic version, e.g. 0.2.0.
+	Version = "0.2.0-dev"
 	// Commit is the git commit the binary was built from.
 	Commit = ""
 	// BuildDate is when the binary was built (RFC3339).
@@ -28,12 +31,14 @@ type BuildInfo struct {
 // Info returns the build metadata for this binary.
 func Info() BuildInfo {
 	info := BuildInfo{
-		Version:     Version,
-		Commit:      Commit,
-		BuildDate:   BuildDate,
-		GoVersion:   goVersion(),
-		Platform:    platform(),
-		Development: Version == "dev" || Version == "",
+		Version:   Version,
+		Commit:    Commit,
+		BuildDate: BuildDate,
+		GoVersion: goVersion(),
+		Platform:  platform(),
+		// A pre-release version is still a development build: it must not claim
+		// to be a published release.
+		Development: Version == "dev" || Version == "" || strings.HasSuffix(Version, "-dev"),
 	}
 	if info.Development {
 		// A development build still reports the commit it was built from when

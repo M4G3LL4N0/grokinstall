@@ -17,7 +17,25 @@ func acceptanceEnv(t *testing.T) (state string, source string) {
 	source = t.TempDir()
 	write(t, source, "README.md", "# widget\n\nA widget CLI fixture.\n")
 	write(t, source, "package.json", `{"name":"widget","version":"1.0.0","bin":{"widget":"bin/widget.sh"}}`)
-	script := "#!/bin/sh\ninput=$(cat)\nprintf '{\"ok\":true,\"result\":{\"seen\":%s}}' \"$input\"\n"
+	// A CLI that genuinely needs argv: it documents a FILE positional in --help
+	// and ignores stdin, so it can only be driven through a real adapter.
+	script := `#!/bin/sh
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+  printf 'widget - display a file\n\nUSAGE:\n  widget [OPTIONS] <FILE>\n\nOPTIONS:\n  --style <name>  output style\n'
+  exit 0
+fi
+style=plain
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --style) style="$2"; shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+printf 'STYLE=%s\n' "$style"
+cat "$1"
+`
 	if err := os.MkdirAll(filepath.Join(source, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +106,7 @@ func TestAcceptanceLifecycle(t *testing.T) {
 	}
 
 	// grokbot contract
-	out, _, err = exec(t, state, "grokbot", "widget.run")
+	out, _, err = exec(t, state, "grokbot", "widget.view")
 	if err != nil {
 		t.Fatalf("grokbot: %v\n%s", err, out)
 	}
@@ -97,7 +115,7 @@ func TestAcceptanceLifecycle(t *testing.T) {
 	}
 
 	// test
-	out, _, err = exec(t, state, "test", "widget.run")
+	out, _, err = exec(t, state, "test", "widget.view")
 	if err != nil {
 		t.Fatalf("test: %v\n%s", err, out)
 	}
@@ -105,17 +123,25 @@ func TestAcceptanceLifecycle(t *testing.T) {
 		t.Fatalf("smoke test should report a pass:\n%s", out)
 	}
 
-	// run
-	out, _, err = exec(t, state, "run", "widget.run", "--input", `{"query":"hello"}`)
+	// run: a real file, so the assertion is about the tool's output rather than
+	// about the request being echoed back.
+	shown := filepath.Join(source, "shown.txt")
+	if err := os.WriteFile(shown, []byte("widget payload\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = exec(t, state, "run", "widget.view", "--input", `{"path":"`+shown+`"}`)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "hello") {
-		t.Fatalf("run should echo input:\n%s", out)
+	if !strings.Contains(out, "widget payload") {
+		t.Fatalf("run should return the tool's own output for the file:\n%s", out)
+	}
+	if strings.Contains(out, `"path"`) {
+		t.Fatalf("run must not echo the request back to the caller:\n%s", out)
 	}
 
 	// info
-	out, _, err = exec(t, state, "info", "widget.run")
+	out, _, err = exec(t, state, "info", "widget.view")
 	if err != nil {
 		t.Fatalf("info: %v\n%s", err, out)
 	}
@@ -124,7 +150,7 @@ func TestAcceptanceLifecycle(t *testing.T) {
 	}
 
 	// uninstall
-	if _, _, err := exec(t, state, "uninstall", "widget.run"); err != nil {
+	if _, _, err := exec(t, state, "uninstall", "widget.view"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	// registry no longer exposes it
@@ -138,7 +164,7 @@ func TestAcceptanceLifecycle(t *testing.T) {
 		t.Fatalf("capabilities --json invalid: %v\n%s", err, out)
 	}
 	for _, c := range payload.Capabilities {
-		if c.Name == "widget.run" {
+		if c.Name == "widget.view" {
 			t.Fatal("uninstalled capability is still exposed")
 		}
 	}
@@ -203,7 +229,7 @@ func TestInstallDryRunJSON(t *testing.T) {
 	}
 	// nothing registered
 	out, _, _ = exec(t, state, "list", "--json")
-	if strings.Contains(out, "widget.run") {
+	if strings.Contains(out, "widget.view") {
 		t.Fatalf("dry run must not register anything:\n%s", out)
 	}
 }
@@ -214,7 +240,11 @@ func TestRunJSONEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := exec(t, state, "run", "widget.run", "--input", `{"query":"x"}`, "--json")
+	shown := filepath.Join(source, "payload.txt")
+	if err := os.WriteFile(shown, []byte("json envelope payload\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := exec(t, state, "run", "widget.view", "--input", `{"path":"`+shown+`"}`, "--json")
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, out)
 	}
@@ -238,7 +268,11 @@ func TestRunReadsStdin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.WriteString(`{"query":"from-stdin"}`); err != nil {
+	shown := filepath.Join(source, "stdin-payload.txt")
+	if err := os.WriteFile(shown, []byte("stdin routed payload\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString(`{"path":"` + shown + `"}`); err != nil {
 		t.Fatal(err)
 	}
 	w.Close()
@@ -246,12 +280,12 @@ func TestRunReadsStdin(t *testing.T) {
 	os.Stdin = r
 	defer func() { os.Stdin = oldStdin }()
 
-	out, _, err := exec(t, state, "run", "widget.run", "--json")
+	out, _, err := exec(t, state, "run", "widget.view", "--json")
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "from-stdin") {
-		t.Fatalf("stdin input should reach the capability:\n%s", out)
+	if !strings.Contains(out, "stdin routed payload") {
+		t.Fatalf("an envelope piped on stdin must reach the capability:\n%s", out)
 	}
 }
 
@@ -311,7 +345,7 @@ func TestCapabilitiesJSONIsCompact(t *testing.T) {
 func TestGrokbotContractIsBounded(t *testing.T) {
 	state, source := acceptanceEnv(t)
 	_, _, _ = exec(t, state, "install", source, "--goal", "run the widget CLI", "--json")
-	out, _, err := exec(t, state, "grokbot", "widget.run")
+	out, _, err := exec(t, state, "grokbot", "widget.view")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +357,7 @@ func TestGrokbotContractIsBounded(t *testing.T) {
 func TestGrokbotJSON(t *testing.T) {
 	state, source := acceptanceEnv(t)
 	_, _, _ = exec(t, state, "install", source, "--goal", "run the widget CLI", "--json")
-	out, _, err := exec(t, state, "grokbot", "widget.run", "--json")
+	out, _, err := exec(t, state, "grokbot", "widget.view", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +378,7 @@ func TestGrokbotJSON(t *testing.T) {
 func TestUninstallJSON(t *testing.T) {
 	state, source := acceptanceEnv(t)
 	_, _, _ = exec(t, state, "install", source, "--goal", "run the widget CLI", "--json")
-	out, _, err := exec(t, state, "uninstall", "widget.run", "--json")
+	out, _, err := exec(t, state, "uninstall", "widget.view", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +389,7 @@ func TestUninstallJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
 		t.Fatalf("uninstall --json invalid: %v\n%s", err, out)
 	}
-	if payload.Uninstalled != "widget.run" {
+	if payload.Uninstalled != "widget.view" {
 		t.Fatalf("uninstall JSON incomplete: %+v", payload)
 	}
 }
@@ -416,7 +450,7 @@ func TestNoInstallIsReportedAsSuccess(t *testing.T) {
 func TestInfoShowsVerificationAndReceipt(t *testing.T) {
 	state, source := acceptanceEnv(t)
 	_, _, _ = exec(t, state, "install", source, "--goal", "run the widget CLI", "--json")
-	out, _, err := exec(t, state, "info", "widget.run", "--json")
+	out, _, err := exec(t, state, "info", "widget.view", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +483,7 @@ func TestTestCommandReportsFailureExit(t *testing.T) {
 	if err := os.Remove(filepath.Join(source, "bin", "widget.sh")); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := exec(t, state, "test", "widget.run"); err == nil {
+	if _, _, err := exec(t, state, "test", "widget.view"); err == nil {
 		t.Fatal("a broken capability must fail its smoke test with a non-zero exit")
 	}
 }
@@ -457,7 +491,7 @@ func TestTestCommandReportsFailureExit(t *testing.T) {
 func TestUsageTracksInstallsAndRuns(t *testing.T) {
 	state, source := acceptanceEnv(t)
 	_, _, _ = exec(t, state, "install", source, "--goal", "run the widget CLI", "--json")
-	_, _, _ = exec(t, state, "run", "widget.run", "--input", `{"a":1}`, "--json")
+	_, _, _ = exec(t, state, "run", "widget.view", "--input", `{"a":1}`, "--json")
 	out, _, err := exec(t, state, "usage", "--json")
 	if err != nil {
 		t.Fatal(err)

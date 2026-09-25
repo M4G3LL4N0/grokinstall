@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/M4G3LL4N0/grokinstall/internal/adapter"
 	"github.com/M4G3LL4N0/grokinstall/internal/cache"
 	"os"
 	"os/exec"
@@ -68,6 +69,10 @@ type Options struct {
 	TimeoutMs    int
 	// Policy governs provisioning. Zero value means the safe policy.
 	Policy ProvisionPolicy
+	// AllowProbe permits running `tool --help` on an executable GrokInstall does
+	// not own, to gather argument evidence. Off by default: probing a binary the
+	// user merely pointed at is a decision the user should make explicitly.
+	AllowProbe bool
 }
 
 // PlannedAction is one mutation an install would perform.
@@ -356,6 +361,11 @@ func (ins *Installer) Install(opts Options) (*Result, error) {
 	res.Capability = name
 
 	actions, m := ins.buildManifest(opts, built, name, chosen, support)
+	// buildManifest may correct the name once the invocation mapping is known,
+	// so every later use reads the manifest's name rather than the provisional
+	// one derived from the goal alone.
+	name = m.Name
+	res.Capability = name
 	res.PlannedActions = actions
 
 	if opts.DryRun {
@@ -512,7 +522,7 @@ func (ins *Installer) buildManifest(opts Options, built *plan.Plan, name string,
 		timeout = DefaultTimeoutMs
 	}
 	m := &manifest.Manifest{
-		Schema:   manifest.SchemaID,
+		Schema:   manifest.CurrentSchema,
 		Name:     name,
 		Version:  "1",
 		Source:   opts.Source.Canonical,
@@ -546,7 +556,7 @@ func (ins *Installer) buildManifest(opts Options, built *plan.Plan, name string,
 	var actions PlannedAction
 	actions.RegistryChanges = []string{"register " + name}
 	actions.VerificationPlan = []string{
-		"manifest validates against " + manifest.SchemaID,
+		"manifest validates against " + manifest.CurrentSchema,
 		"execution target exists and is executable",
 		"capability launches and returns a bounded result",
 	}
@@ -596,6 +606,54 @@ func (ins *Installer) buildManifest(opts Options, built *plan.Plan, name string,
 				"none: the declared CLI is not present on this machine")
 			break
 		}
+
+		// Build a real invocation mapping. A cli_bridge that cannot translate
+		// input into arguments is not a capability, so an unresolvable mapping
+		// makes the capability plan-only instead of runnable-but-useless.
+		entry := structuredEntryFor(built, cmd)
+		// Probing is only safe for an executable GrokInstall itself provisioned,
+		// or one the user explicitly pointed at. An already-present tool is
+		// referenced, not probed, unless the goal makes discovery necessary.
+		allowProbe := !externallyManaged || opts.AllowProbe
+		discovered, discErr := adapter.Discover(context.Background(), adapter.Request{
+			Command:    cmd,
+			Entry:      entry,
+			Goal:       opts.Goal,
+			AllowProbe: allowProbe,
+		})
+		// Record what discovery concluded before branching, so the plan can
+		// report an honest operation (or an honest refusal) either way.
+		built.Invocation = plan.InvocationSummary{
+			OutputMode:      discovered.Adapter.OutputModeOrEmpty(),
+			AdapterRequired: discErr != nil,
+		}
+		if discErr != nil {
+			built.Invocation.Reason = discErr.Error()
+		} else {
+			built.Invocation.Operation = discovered.Adapter.Operation
+			built.Invocation.Confidence = string(discovered.Adapter.Confidence)
+			built.Invocation.Layer = discovered.Layer
+		}
+		if discErr != nil {
+			// Layer D: no trustworthy mapping. Record why, and refuse to be
+			// runnable. This is the honest outcome.
+			m.Execution = manifest.Execution{
+				Type:      manifest.ExecutionNone,
+				Supported: false,
+				Note: "no trustworthy invocation mapping for " + filepath.Base(cmd) +
+					": " + discErr.Error() + ". Provide one with --command, or define an adapter.",
+			}
+			m.Status = "plan-only"
+			m.Support = manifest.SupportPlanOnly
+			actions.ExternalCommands = append(actions.ExternalCommands,
+				"none: an adapter is required before this capability can execute")
+			break
+		}
+
+		ownership := manifest.OwnershipExternal
+		if !externallyManaged {
+			ownership = manifest.OwnershipGrokinstall
+		}
 		m.Execution = manifest.Execution{
 			Type:           manifest.ExecutionSubprocess,
 			Supported:      true,
@@ -605,19 +663,38 @@ func (ins *Installer) buildManifest(opts Options, built *plan.Plan, name string,
 			TimeoutMs:      timeout,
 			MaxOutputBytes: DefaultMaxOutputBytes,
 			WorkingDir:     workingDirFor(opts),
+			Ownership:      ownership,
+		}
+		// Ownership drives whether integrity is a hard gate. A user-supplied
+		// command is never treated as GrokInstall-owned.
+		if opts.Command != "" {
+			m.Execution.Ownership = manifest.OwnershipSupplied
+		}
+		m.Adapter = manifestAdapter(discovered.Adapter, discovered.Layer)
+		m.Input = manifest.Schema{Fields: inputFieldsFor(m.Adapter)}
+		m.Output = manifest.Schema{Fields: outputFieldsFor(m.Adapter)}
+		// Now that the mapping is known, the capability name can be corrected.
+		// A name is a promise: "review" would claim analysis this mapping does
+		// not perform, so the evidence-backed operation wins. An explicit
+		// --name is the user's choice and is never overridden.
+		if strings.TrimSpace(opts.Name) == "" {
+			if corrected := operationName(name, discovered.Adapter.Operation); corrected != name {
+				m.Name = corrected
+				// Recovery instructions must name the capability the caller will
+				// actually have, or the contract points at a command that does
+				// not exist.
+				m.Grokbot.OnFailure = fmt.Sprintf("Run:\ngrokinstall diagnose %s", corrected)
+			}
 		}
 		if externallyManaged {
 			m.Security.Notes = append(m.Security.Notes,
-				"the upstream software is managed outside GrokInstall and was not installed or modified")
+				"the upstream software is managed outside GrokInstall and was not installed or modified",
+				"this executable is external: GrokInstall references it and does not own or restore it")
 		}
-		m.Input = manifest.Schema{Fields: []manifest.Field{
-			{Name: "input", Type: "object", Description: "JSON object passed to the capability on stdin"},
-		}}
-		m.Output = manifest.Schema{Fields: []manifest.Field{
-			{Name: "result", Type: "object", Description: "the capability's JSON result"},
-		}}
+		m.Security.OwnedByGrokinstall = m.Execution.Ownership == manifest.OwnershipGrokinstall
 		m.Security.ExecutesSourceCode = true
 		actions.FilesCreated = append(actions.FilesCreated, "manifests/"+name+".json")
+		actions.AdapterGeneration = fmt.Sprintf("build a deterministic %s adapter from %s evidence", m.Adapter.OutputMode, discovered.Layer)
 		actions.ExternalCommands = append(actions.ExternalCommands, "smoke test: "+cmd)
 
 	default:
@@ -823,6 +900,23 @@ func (ins *Installer) commit(stageDir, stagedManifest string, opts Options, buil
 		}
 		res.ProvisioningDetail.RuntimeDir = runtimeDir
 		res.ProvisioningDetail.Checksums = meta.Checksums
+		// Ownership is settled here, from what actually happened, rather than
+		// from the strategy chosen earlier. GrokInstall can only promise the
+		// bytes it provisioned, so only a committed GrokInstall-owned runtime
+		// gets hash-enforced execution; anything else stays external.
+		switch meta.Ownership {
+		case provision.OwnershipGrokinstall:
+			m.Execution.Ownership = manifest.OwnershipGrokinstall
+			m.Security.OwnedByGrokinstall = true
+		case provision.OwnershipSystem, provision.OwnershipExternal:
+			m.Execution.Ownership = manifest.OwnershipExternal
+			m.Security.OwnedByGrokinstall = false
+		}
+	} else if m.Execution.Ownership == manifest.OwnershipGrokinstall {
+		// No runtime was committed, so there is nothing GrokInstall owns here.
+		// The executable is the user's own file and is not hash-enforced.
+		m.Execution.Ownership = manifest.OwnershipExternal
+		m.Security.OwnedByGrokinstall = false
 	}
 
 	manifestPath, err := m.Save(ins.Registry.ManifestsDir())
@@ -934,19 +1028,37 @@ func (ins *Installer) verify(m *manifest.Manifest, stagedPath string, opts Optio
 		}
 		spec := ins.specFor(m)
 		spec.Timeout = shortTimeout(m.Execution.TimeoutMs)
-		resp, err := ins.rt.Invoke(context.Background(), spec, json.RawMessage(`{}`))
-		if err != nil {
-			add("capability launches", false, err.Error())
-			v.Passed = false
-			return v
+		// Verify the adapter, not merely the process. An install-time probe has
+		// no real user input, so it supplies the minimum a mapping needs. When
+		// even that is impossible the honest result is "cannot probe here", not
+		// "the capability is broken": conflating them would make a good
+		// integration look unsafe.
+		probeInput, probeable := probeInputFor(m, opts)
+		if !probeable {
+			add("adapter mapping", true, describeAdapter(m))
+			add("capability launches", true, "not probed at install: this mapping needs real caller input; use grokinstall test "+m.Name)
+		} else {
+			resp, err := ins.rt.Invoke(context.Background(), spec, probeInput)
+			switch {
+			case err != nil:
+				add("capability launches", false, err.Error())
+				v.Passed = false
+				return v
+			case !resp.OK:
+				// An input the mapping rejects is not a broken capability.
+				if resp.Error != nil && resp.Error.Code == runtime.CodeInvalidInput {
+					add("adapter mapping", true, describeAdapter(m))
+					add("capability launches", true, "mapping rejects the install-time probe input; use grokinstall test "+m.Name)
+					break
+				}
+				add("capability launches", false, resp.Error.Code+": "+resp.Error.Message)
+				v.Passed = false
+				return v
+			default:
+				add("capability launches", true, "returned a bounded result")
+				v.Output = truncateOutput(resp.Result)
+			}
 		}
-		if !resp.OK {
-			add("capability launches", false, resp.Error.Code+": "+resp.Error.Message)
-			v.Passed = false
-			return v
-		}
-		add("capability launches", true, "returned a bounded result")
-		v.Output = truncateOutput(resp.Result)
 
 	case manifest.ExecutionBuiltin:
 		idxPath := filepath.Join(filepath.Dir(stagedPath), m.Name, "index.json")
@@ -1067,7 +1179,7 @@ func (ins *Installer) specFor(m *manifest.Manifest) runtime.Spec {
 	default:
 		mode = runtime.ModeNone
 	}
-	return runtime.Spec{
+	spec := runtime.Spec{
 		Type:           runtime.ExecutionType(m.Execution.Type),
 		Command:        m.Execution.Command,
 		Args:           m.Execution.Args,
@@ -1080,6 +1192,33 @@ func (ins *Installer) specFor(m *manifest.Manifest) runtime.Spec {
 		Handler:        m.Execution.Handler,
 		ExpectJSON:     m.Execution.ExpectJSON,
 	}
+	// An adapter replaces the legacy stdin-JSON pipe with a real translation.
+	if m.Adapter != nil {
+		spec.Adapter = &runtime.Adapter{
+			Kind:        m.Adapter.Kind,
+			OutputMode:  m.Adapter.OutputMode,
+			OutputField: m.Adapter.OutputField,
+			Operation:   m.Adapter.Operation,
+		}
+		for _, b := range m.Adapter.Argv {
+			spec.Adapter.Argv = append(spec.Adapter.Argv, runtime.Binding{
+				From: b.From, Kind: b.Kind, Flag: b.Flag, Position: b.Position,
+				Value: b.Value, Required: b.Required,
+				AllowDashLeading: b.AllowDashLeading, EndOfOptions: b.EndOfOptions,
+			})
+		}
+		if m.Adapter.Stdin != nil {
+			spec.Adapter.Stdin = &runtime.Binding{From: m.Adapter.Stdin.From, Required: m.Adapter.Stdin.Required}
+		}
+		if m.Adapter.WorkingDir != nil {
+			spec.Adapter.WorkingDir = &runtime.Binding{From: m.Adapter.WorkingDir.From, Required: m.Adapter.WorkingDir.Required}
+		}
+		spec.OutputMode = m.Adapter.OutputMode
+		spec.OutputField = m.Adapter.OutputField
+		// With an adapter, argv comes from the mapping, not from a static list.
+		spec.Args = nil
+	}
+	return spec
 }
 
 // Run invokes an installed capability through the universal runtime.
@@ -1092,16 +1231,43 @@ func (ins *Installer) Run(name string, input json.RawMessage) (*RunResult, error
 	if err != nil {
 		return nil, err
 	}
+	// A manifest written before the adapter model has no invocation mapping.
+	// Its execution semantics are unknown, so it is refused rather than
+	// reinterpreted: guessing here is exactly how a capability ends up
+	// pretending to work.
+	if m.NeedsReinstall() {
+		return &RunResult{
+			OK: false,
+			Error: &runtime.Error{
+				Code:              runtime.CodeInvalidAdapter,
+				Message:           m.SchemaNote(),
+				Capability:        name,
+				Component:         "adapter",
+				RecommendedAction: "grokinstall install " + m.Source,
+			},
+		}, nil
+	}
 	if !m.Runnable() {
 		return &RunResult{
 			OK: false,
 			Error: &runtime.Error{
-				Code:    runtime.CodeNotExecutable,
-				Message: "this capability is " + string(m.Support) + " and cannot be executed",
+				Code:       runtime.CodeNotExecutable,
+				Message:    "this capability is " + string(m.Support) + " and cannot be executed",
+				Capability: name,
+				Component:  "execution",
 			},
 		}, nil
 	}
+
+	// Trust gate. This runs before any process is created, and it never repairs
+	// anything: a modified or missing owned runtime blocks execution and tells
+	// the caller to diagnose.
+	if terr := ins.verifyTrust(name, entry, m); terr != nil {
+		return &RunResult{OK: false, Error: terr}, nil
+	}
+
 	spec := ins.specFor(m)
+	spec.Capability = name
 	if m.Execution.Type == manifest.ExecutionBuiltin && m.Execution.Handler == "knowledge" {
 		// Bind the index for this invocation only: no shared mutable state.
 		indexPath := entry.AdapterPath
@@ -1133,6 +1299,64 @@ func (ins *Installer) Run(name string, input json.RawMessage) (*RunResult, error
 		out.RawResult = string(raw)
 	}
 	return out, nil
+}
+
+// verifyTrust applies the runtime trust gate for a capability.
+//
+// The policy is deliberately asymmetric. A GrokInstall-owned runtime must match
+// the hashes recorded when it was provisioned, or it does not run. An external
+// executable is checked for existence and recorded as external: the user owns
+// it, a package upgrade legitimately changes it, and GrokInstall must not
+// report a routine upgrade as tampering it could not have caused.
+func (ins *Installer) verifyTrust(name string, entry registry.Entry, m *manifest.Manifest) *runtime.Error {
+	if m.Execution.Type != manifest.ExecutionSubprocess {
+		return nil
+	}
+	command := m.Execution.Command
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+
+	trust := runtime.Trust{
+		Ownership:  runtime.Ownership(m.Execution.Ownership),
+		Command:    command,
+		RuntimeDir: entry.RuntimeDir,
+	}
+	if trust.Ownership == runtime.OwnershipNone {
+		// Derive ownership from the recorded runtime rather than trusting a
+		// missing field. A capability with a GrokInstall-owned runtime directory
+		// is owned, whatever the manifest says.
+		if entry.RuntimeDir != "" {
+			trust.Ownership = runtime.OwnershipGrokinstall
+		} else {
+			trust.Ownership = runtime.OwnershipExternal
+		}
+	}
+	if trust.Ownership == runtime.OwnershipGrokinstall {
+		meta, err := ins.runtimeMetadata(entry)
+		if err != nil || len(meta.Checksums) == 0 {
+			// With no baseline there is nothing to compare against. Refusing is
+			// the safe answer: silently trusting an unverified owned binary is
+			// the failure this gate exists to prevent.
+			return &runtime.Error{
+				Code:              runtime.CodeIntegrityFailure,
+				Message:           "no recorded integrity hashes exist for this GrokInstall-owned runtime, so it cannot be trusted",
+				Capability:        name,
+				Component:         "runtime",
+				RecommendedAction: "grokinstall diagnose " + name,
+			}
+		}
+		trust.Recorded = meta.Checksums
+	}
+	return runtime.Verify(trust, name)
+}
+
+// runtimeMetadata loads the metadata recorded beside a provisioned runtime.
+func (ins *Installer) runtimeMetadata(entry registry.Entry) (provision.Metadata, error) {
+	if entry.RuntimeDir == "" {
+		return provision.Metadata{}, fmt.Errorf("no runtime directory is recorded")
+	}
+	return provision.LoadMetadata(filepath.Join(entry.RuntimeDir, "metadata.json"))
 }
 
 // searchKnowledge answers a query from an installed index.
@@ -1206,6 +1430,16 @@ func (ins *Installer) Test(name string) (*SmokeReport, error) {
 			return report, nil
 		}
 		add("execution target is executable", true, info.Mode().String())
+
+		// The trust gate is part of what a capability is, so it is part of what
+		// is tested. A tampered owned runtime must fail here, loudly, rather
+		// than being discovered only when a run silently misbehaves.
+		if terr := ins.verifyTrust(name, entry, m); terr != nil {
+			add("runtime integrity", false, terr.Code+": "+terr.Message)
+			report.DurationMs = time.Since(start).Milliseconds()
+			return report, nil
+		}
+		add("runtime integrity", true, "execution target matches its verified state")
 	}
 
 	if entry.AdapterPath != "" {
@@ -1215,6 +1449,13 @@ func (ins *Installer) Test(name string) (*SmokeReport, error) {
 			return report, nil
 		}
 		add("adapter exists", true, entry.AdapterPath)
+	}
+
+	// A capability with a mapping is tested as a capability: the mapping is
+	// validated, its input rules are exercised, and the command is run for real.
+	// Proving only that a binary can start is not a smoke test of a capability.
+	if m.Adapter != nil {
+		ins.testAdapter(add, m)
 	}
 
 	// Launch the capability with a bounded timeout.
@@ -1227,6 +1468,11 @@ func (ins *Installer) Test(name string) (*SmokeReport, error) {
 			return searchKnowledge(idxPath, in)
 		}
 		input = json.RawMessage(`{"query":"the"}`)
+	} else if m.Adapter != nil {
+		probe, ok := probeInputFor(m, Options{Source: sourceRef{LocalPath: installSourceDir(entry, m)}})
+		if ok {
+			input = probe
+		}
 	}
 	resp, err := ins.rt.Invoke(context.Background(), spec, input)
 	switch {

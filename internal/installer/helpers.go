@@ -23,6 +23,14 @@ func newInstallID() string {
 }
 
 // chooseName derives a stable capability name from the source and goal.
+//
+// A capability name is a promise about what the operation does, so it may not
+// exceed what the invocation mapping can actually perform. Asking for a
+// "review" of a tool that only displays files would produce `tool.review`, and
+// GrokBot would reasonably expect analysis it will never get. When the mapping
+// knows a better word for the operation, that word wins; when it does not, the
+// goal is honoured only as far as the evidence supports, and `run` is the
+// honest fallback.
 func chooseName(opts Options, built *plan.Plan) string {
 	if strings.TrimSpace(opts.Name) != "" {
 		return sanitize(opts.Name)
@@ -30,6 +38,11 @@ func chooseName(opts Options, built *plan.Plan) string {
 	base := built.Manifest.Name
 	if base == "" || base == "source" {
 		base = "capability"
+	}
+	// The adapter's evidence-backed operation is the strongest available signal,
+	// because it describes what the tool will really do.
+	if op := strings.TrimSpace(built.Invocation.Operation); op != "" {
+		return sanitize(base + "." + op)
 	}
 	verb := goalVerb(built.Goal)
 	if verb == "" {

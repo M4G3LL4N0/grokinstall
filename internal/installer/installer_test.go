@@ -17,8 +17,14 @@ import (
 
 // --- fixtures ---------------------------------------------------------------
 
-// cliFixture is a project that ships a real, runnable CLI as a shell script
-// that reads JSON on stdin and writes JSON on stdout.
+// cliFixture is a project that ships a real, runnable CLI as a shell script.
+//
+// The CLI behaves like an ordinary file-display tool: it documents a FILE
+// positional in --help, ignores stdin, and prints a file's contents. That
+// matters: a CLI which only reads JSON on stdin can be "driven" by the old
+// pipe-to-stdin path, which is precisely the behaviour v0.2 removes. A fixture
+// that genuinely needs argv keeps the runnable path honest and lets
+// adapter discovery prove it can map a real command.
 func cliFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -27,7 +33,23 @@ func cliFixture(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "#!/bin/sh\ninput=$(cat)\nprintf '{\"ok\":true,\"result\":{\"seen\":%s}}' \"$input\"\n"
+	body := `#!/bin/sh
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+  printf 'widget - display a file\n\nUSAGE:\n  widget [OPTIONS] <FILE>\n\nOPTIONS:\n  --style <name>  output style\n  --word <text>    match a word\n'
+  exit 0
+fi
+style=plain
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --style) style="$2"; shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+printf 'STYLE=%s\n' "$style"
+cat "$1"
+`
 	if err := os.WriteFile(filepath.Join(dir, "bin", "widget.sh"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -121,14 +143,20 @@ func TestInstalledCLIIsRunnable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := ins.Run(res.Capability, json.RawMessage(`{"query":"hello"}`))
+	// A real file, so the assertion below is about the tool's actual output
+	// rather than about the request being echoed back.
+	target := filepath.Join(dir, "shown.txt")
+	if err := os.WriteFile(target, []byte("widget payload\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ins.Run(res.Capability, json.RawMessage(`{"path":"`+target+`"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !out.OK {
 		t.Fatalf("installed capability must run: %+v", out.Error)
 	}
-	if !strings.Contains(out.RawResult, "hello") {
+	if !strings.Contains(out.RawResult, "widget payload") {
 		t.Fatalf("input did not reach the capability: %s", out.RawResult)
 	}
 }
@@ -201,14 +229,35 @@ func TestManifestIsInstalledShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Schema != manifest.SchemaID {
-		t.Fatalf("schema = %q", m.Schema)
+	// v0.2 writes the adapter schema. A v1 manifest carries no invocation
+	// mapping and is therefore never reinterpreted.
+	if m.Schema != manifest.CurrentSchema {
+		t.Fatalf("schema = %q, want %q", m.Schema, manifest.CurrentSchema)
 	}
 	if !m.Runnable() {
 		t.Fatalf("installed cli_bridge must be runnable: %+v", m.Execution)
 	}
 	if m.Strategy != "cli_bridge" {
 		t.Fatalf("strategy = %q", m.Strategy)
+	}
+	// A runnable cli_bridge must carry a real mapping. Without one it could only
+	// pipe JSON to stdin, which is the v0.1 behaviour this pass removes.
+	if m.Adapter == nil {
+		t.Fatal("a runnable cli_bridge must carry an invocation mapping")
+	}
+	if m.Adapter.OutputMode == "" || m.Adapter.OutputField == "" {
+		t.Fatalf("adapter must declare an output mode and field: %+v", m.Adapter)
+	}
+	if len(m.Adapter.Argv) == 0 && m.Adapter.Stdin == nil {
+		t.Fatalf("adapter must bind at least one input: %+v", m.Adapter)
+	}
+	if m.Adapter.Confidence != "high" && m.Adapter.Confidence != "medium" {
+		t.Fatalf("a runnable adapter must be high or medium confidence, got %q", m.Adapter.Confidence)
+	}
+	// Ownership must be recorded, because it decides whether integrity is a
+	// hard execution gate.
+	if m.Execution.Ownership == "" {
+		t.Fatal("execution ownership must be recorded")
 	}
 }
 

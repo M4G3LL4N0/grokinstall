@@ -45,11 +45,20 @@ func register(t *testing.T, e *Engine, name string, m *manifest.Manifest) regist
 func subprocessManifest(t *testing.T, command string) *manifest.Manifest {
 	t.Helper()
 	return &manifest.Manifest{
-		Schema: manifest.SchemaID, Name: "demo.cli", Version: "1",
+		Schema: manifest.CurrentSchema, Name: "demo.cli", Version: "1",
 		Source: "path:/demo", Strategy: "cli_bridge", Support: manifest.SupportReady,
 		Status:    "ready",
 		Execution: manifest.Execution{Type: manifest.ExecutionSubprocess, Command: command, Supported: true},
-		Grokbot:   manifest.Grokbot{UseWhen: "run demo"},
+		Adapter: &manifest.Adapter{
+			Kind: "cli", OutputMode: "text", OutputField: "text", Operation: "run",
+			Confidence: "high",
+			Evidence:   []string{"test fixture mapping"},
+			Argv:       []manifest.Binding{{From: "input", Kind: "stdin"}},
+		},
+		Input:  manifest.Schema{Fields: []manifest.Field{{Name: "input", Type: "any JSON value"}}},
+		Output: manifest.Schema{Fields: []manifest.Field{{Name: "text", Type: "string"}}},
+
+		Grokbot: manifest.Grokbot{UseWhen: "run demo"},
 	}
 }
 

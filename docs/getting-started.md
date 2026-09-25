@@ -44,20 +44,20 @@ grokinstall install ./my-tool --goal "..." --dry-run
 
 ```bash
 grokinstall capabilities          # what can be called
-grokinstall grokbot bat.review    # how to call it
+grokinstall grokbot bat.view    # how to call it
 ```
 
 ## 4. Run it
 
 ```bash
-grokinstall run bat.review --input '{}'
+grokinstall run bat.view --input '{}'
 ```
 
 ## When something breaks
 
 ```bash
-grokinstall diagnose bat.review
-grokinstall audit bat.review
+grokinstall diagnose bat.view
+grokinstall audit bat.view
 grokinstall doctor
 ```
 

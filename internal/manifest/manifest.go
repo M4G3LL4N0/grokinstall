@@ -8,6 +8,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,18 @@ import (
 
 // SchemaID identifies the manifest schema.
 const SchemaID = "grokinstall/v1"
+
+// SchemaV2 is the schema introduced with the adapter model. A manifest written
+// under grokinstall/v1 carried no invocation mapping, so it cannot be executed
+// safely under the new trust rules: v0.2 reads those only to report that a
+// reinstall is required.
+const SchemaV2 = "grokinstall/v2"
+
+// CurrentSchema is the schema new manifests are written with.
+const CurrentSchema = SchemaV2
+
+// KnownSchemas lists every schema this build can read.
+func KnownSchemas() []string { return []string{SchemaID, SchemaV2} }
 
 // MaxContractBytes bounds the generated GrokBot contract.
 const MaxContractBytes = 8192
@@ -84,12 +97,42 @@ type Manifest struct {
 	Support    Support    `json:"support"`
 	Status     string     `json:"status"`
 	Execution  Execution  `json:"execution"`
+	Adapter    *Adapter   `json:"adapter,omitempty"`
 	Input      Schema     `json:"input"`
 	Output     Schema     `json:"output"`
 	Grokbot    Grokbot    `json:"grokbot"`
 	Cache      Cache      `json:"cache"`
 	Security   Security   `json:"security"`
 	Provenance Provenance `json:"provenance"`
+}
+
+// Adapter is the persisted invocation mapping. It mirrors the runtime adapter
+// model and is kept separate here so the manifest stays the contract GrokBot
+// reads, not an import of execution machinery.
+type Adapter struct {
+	Kind        string    `json:"kind"`
+	OutputMode  string    `json:"output_mode"`
+	OutputField string    `json:"output_field"`
+	Operation   string    `json:"operation,omitempty"`
+	Confidence  string    `json:"confidence"`
+	Evidence    []string  `json:"evidence,omitempty"`
+	Notes       []string  `json:"notes,omitempty"`
+	Layer       string    `json:"layer,omitempty"`
+	Argv        []Binding `json:"argv,omitempty"`
+	Stdin       *Binding  `json:"stdin,omitempty"`
+	WorkingDir  *Binding  `json:"working_dir,omitempty"`
+}
+
+// Binding maps one input field to one deterministic place in an invocation.
+type Binding struct {
+	From             string `json:"from"`
+	Kind             string `json:"kind"`
+	Flag             string `json:"flag,omitempty"`
+	Position         int    `json:"position,omitempty"`
+	Value            string `json:"value,omitempty"`
+	Required         bool   `json:"required,omitempty"`
+	AllowDashLeading bool   `json:"allow_dash_leading,omitempty"`
+	EndOfOptions     bool   `json:"end_of_options,omitempty"`
 }
 
 // Execution describes how a capability runs, completely and explicitly.
@@ -107,8 +150,35 @@ type Execution struct {
 	TimeoutMs      int               `json:"timeout_ms,omitempty"`
 	MaxOutputBytes int               `json:"max_output_bytes,omitempty"`
 	ExpectJSON     bool              `json:"expect_json,omitempty"`
-	Note           string            `json:"note,omitempty"`
+	// Ownership records who controls the executable. GrokInstall may only
+	// enforce and repair integrity for runtimes it owns.
+	Ownership Ownership `json:"ownership,omitempty"`
+	// Baseline, when present, records a hash taken at install time for an
+	// external executable. It is advisory: an external tool is expected to
+	// change when the user upgrades it.
+	Baseline string `json:"baseline,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
+
+// Ownership says who controls the execution target.
+type Ownership string
+
+// Ownership levels.
+const (
+	// OwnershipGrokinstall means GrokInstall provisioned the executable into a
+	// runtime directory it controls. Only these runtimes are hash-enforced.
+	OwnershipGrokinstall Ownership = "grokinstall"
+	// OwnershipExternal means the executable already existed on the machine.
+	// GrokInstall references it and does not claim it can restore it.
+	OwnershipExternal Ownership = "external"
+	// OwnershipSupplied means the user pointed GrokInstall at an executable.
+	OwnershipSupplied Ownership = "user_supplied"
+)
+
+// Enforced reports whether integrity is enforced as a hard execution gate.
+// Only GrokInstall-owned runtimes qualify: a package manager upgrading an
+// external tool is normal and must not read as a security failure.
+func (o Ownership) Enforced() bool { return o == OwnershipGrokinstall }
 
 // Schema is a small input or output description.
 type Schema struct {
@@ -162,8 +232,11 @@ type Provenance struct {
 // Validate checks the invariants a registered manifest must satisfy. In
 // particular, a manifest may never claim execution support it cannot deliver.
 func (m *Manifest) Validate() error {
-	if m.Schema != SchemaID {
-		return fmt.Errorf("manifest schema must be %q, got %q", SchemaID, m.Schema)
+	if m.Schema == "" {
+		return fmt.Errorf("manifest schema is required (one of %s)", strings.Join(KnownSchemas(), ", "))
+	}
+	if !validSchema(m.Schema) {
+		return fmt.Errorf("unknown manifest schema %q (known: %s)", m.Schema, strings.Join(KnownSchemas(), ", "))
 	}
 	if m.Name == "" {
 		return fmt.Errorf("manifest name is required")
@@ -216,7 +289,82 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("output fields require a name")
 		}
 	}
+	if err := m.validateAdapter(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validSchema(s string) bool {
+	for _, known := range KnownSchemas() {
+		if s == known {
+			return true
+		}
+	}
+	return false
+}
+
+// validateAdapter enforces the rule that makes a cli_bridge capability real: a
+// runnable subprocess must carry a mapping, and a mapping must be honest about
+// its confidence.
+func (m *Manifest) validateAdapter() error {
+	if m.Execution.Type != ExecutionSubprocess {
+		return nil
+	}
+	runnable := m.Execution.Supported && m.Support.Executable()
+	if !runnable {
+		// A planned capability may legitimately have no adapter.
+		return nil
+	}
+	if m.Adapter == nil {
+		return errors.New("a runnable subprocess capability requires an adapter; a manifest with no mapping would only pipe JSON to stdin")
+	}
+	if m.Adapter.OutputMode == "" {
+		return errors.New("adapter output_mode is required")
+	}
+	if m.Adapter.OutputField == "" {
+		return errors.New("adapter output_field is required")
+	}
+	switch m.Adapter.Confidence {
+	case "high", "medium":
+	case "low", "":
+		return errors.New("adapter confidence must be high or medium for a runnable capability; low confidence stays plan-only")
+	default:
+		return fmt.Errorf("unknown adapter confidence %q", m.Adapter.Confidence)
+	}
+	if len(m.Adapter.Argv) == 0 && m.Adapter.Stdin == nil && m.Adapter.WorkingDir == nil {
+		return errors.New("adapter has no bindings, so it cannot translate any input")
+	}
+	for i, b := range m.Adapter.Argv {
+		if strings.TrimSpace(b.From) == "" && b.Kind != "literal" {
+			return fmt.Errorf("adapter argv binding %d must name an input field", i)
+		}
+		switch b.Kind {
+		case "positional", "stdin", "working_dir", "literal", "boolean_flag", "repeated_flag", "flag_equals", "flag":
+		default:
+			return fmt.Errorf("adapter argv binding %d has unsupported kind %q", i, b.Kind)
+		}
+	}
+	return nil
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(digits)
+	}
+	return string(digits)
 }
 
 // Runnable reports whether this capability can actually be invoked.
@@ -227,6 +375,22 @@ func (m *Manifest) Runnable() bool {
 // CallLine is the exact command GrokBot uses to invoke the capability.
 func (m *Manifest) CallLine() string {
 	return fmt.Sprintf("grokinstall run %s --input '<json>'", m.Name)
+}
+
+// NeedsReinstall reports whether a manifest predates the adapter model and must
+// be reinstalled before it can be executed. An older manifest is never
+// reinterpreted: its execution semantics are unknown, so the safe answer is to
+// refuse rather than guess.
+func (m *Manifest) NeedsReinstall() bool {
+	return m.Schema == SchemaID
+}
+
+// SchemaNote explains a reinstall requirement in one sentence.
+func (m *Manifest) SchemaNote() string {
+	if !m.NeedsReinstall() {
+		return ""
+	}
+	return fmt.Sprintf("this capability was installed under manifest schema %s, which carries no invocation mapping; reinstall it to build one", SchemaID)
 }
 
 // ContractText renders the smallest sufficient GrokBot handoff, derived
@@ -240,6 +404,12 @@ func (m *Manifest) ContractText() string {
 	fmt.Fprintf(&b, "CAPABILITY\n%s\n\n", m.Name)
 	fmt.Fprintf(&b, "USE WHEN\n%s\n\n", orDefault(m.Grokbot.UseWhen, "the described operation is requested"))
 
+	if m.NeedsReinstall() {
+		fmt.Fprintf(&b, "STATUS\nreinstall required\n\n")
+		fmt.Fprintf(&b, "DO NOT\nThis capability cannot be executed: %s\n", m.SchemaNote())
+		return clamp(b.String())
+	}
+
 	if !m.Runnable() {
 		fmt.Fprintf(&b, "STATUS\n%s\n\n", m.planOnlyStatus())
 		fmt.Fprintf(&b, "DO NOT\nThis capability is not executable: %s\n", m.Execution.Note)
@@ -250,8 +420,14 @@ func (m *Manifest) ContractText() string {
 	if fields := describeFields(m.Input.Fields); fields != "" {
 		fmt.Fprintf(&b, "\nINPUT\n%s\n", fields)
 	}
-	if fields := describeFields(m.Output.Fields); fields != "" {
-		fmt.Fprintf(&b, "\nOUTPUT\n%s\n", fields)
+	fmt.Fprintf(&b, "\nOUTPUT\n%s\n", m.describeOutput())
+	if m.Adapter != nil {
+		if op := strings.TrimSpace(m.Adapter.Operation); op != "" {
+			fmt.Fprintf(&b, "\nOPERATION\n%s (translated to this tool's own arguments)\n", op)
+		}
+		if len(m.Adapter.Notes) > 0 {
+			fmt.Fprintf(&b, "\nNOTES\n%s\n", strings.Join(m.Adapter.Notes, "\n"))
+		}
 	}
 	fmt.Fprintf(&b, "\nDO NOT\n%s\n", orDefault(m.Grokbot.DoNot,
 		"load the implementation repository into GrokBot before invoking this capability"))
@@ -261,6 +437,34 @@ func (m *Manifest) ContractText() string {
 	}
 	fmt.Fprintf(&b, "\nON FAILURE\n%s\n", failure)
 	return clamp(b.String())
+}
+
+// describeOutput states what the result will actually contain, derived from the
+// adapter's declared output mode. It never promises a shape the upstream does
+// not produce.
+func (m *Manifest) describeOutput() string {
+	if m.Adapter != nil {
+		field := m.Adapter.OutputField
+		switch m.Adapter.OutputMode {
+		case "text":
+			return field + ": string - the tool's own output, verbatim"
+		case "lines":
+			return field + ": array of strings - the tool's output split into lines"
+		case "exit_status":
+			return "exit_code: integer - the tool's exit status only"
+		case "artifact":
+			return field + ": reference to produced output"
+		case "json":
+			if fields := describeFields(m.Output.Fields); fields != "" {
+				return fields
+			}
+			return field + ": the structured value the tool emitted"
+		}
+	}
+	if fields := describeFields(m.Output.Fields); fields != "" {
+		return fields
+	}
+	return "the tool's own output"
 }
 
 func (m *Manifest) planOnlyStatus() string {
@@ -362,14 +566,19 @@ func (m *Manifest) Save(dir string) (string, error) {
 	return path, nil
 }
 
-// Parse decodes a manifest and checks its schema.
+// Parse decodes a manifest and checks its schema. Any known schema is accepted
+// so an older capability can be reported as needing a reinstall rather than
+// being silently rejected.
 func Parse(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
-	if m.Schema != SchemaID {
-		return nil, fmt.Errorf("manifest schema must be %q, got %q", SchemaID, m.Schema)
+	if m.Schema == "" {
+		return nil, fmt.Errorf("manifest declares no schema; reinstall is required")
+	}
+	if !validSchema(m.Schema) {
+		return nil, fmt.Errorf("unknown manifest schema %q (known: %s)", m.Schema, strings.Join(KnownSchemas(), ", "))
 	}
 	return &m, nil
 }

@@ -6,20 +6,20 @@ receives for a real capability.
 **Produce it**
 
 ```bash
-grokinstall grokbot bat.review
+grokinstall grokbot bat.view
 ```
 
 **Measured output for the flagship `bat` run: 432 bytes.**
 
 ```text
 CAPABILITY
-bat.review
+bat.view
 
 USE WHEN
 the user wants GrokBot to: Let GrokBot use bat to inspect text files
 
 CALL
-grokinstall run bat.review --input '<json>'
+grokinstall run bat.view --input '<json>'
 
 INPUT
 input: object - JSON object passed to the capability on stdin
@@ -33,7 +33,7 @@ invoking this capability
 
 ON FAILURE
 Run:
-grokinstall diagnose bat.review
+grokinstall diagnose bat.view
 ```
 
 **What it contains**

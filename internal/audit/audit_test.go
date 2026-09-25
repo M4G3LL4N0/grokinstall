@@ -39,12 +39,21 @@ func install(t *testing.T, opts ...func(*manifest.Manifest, *registry.Entry)) *f
 		t.Fatal(err)
 	}
 	m := &manifest.Manifest{
-		Schema: manifest.SchemaID, Name: "demo.cli", Version: "1",
+		Schema: manifest.CurrentSchema, Name: "demo.cli", Version: "1",
 		Source: "path:/demo", Strategy: "cli_bridge", Support: manifest.SupportReady,
 		Status:    "ready",
 		Execution: manifest.Execution{Type: manifest.ExecutionSubprocess, Command: bin, Supported: true},
-		Grokbot:   manifest.Grokbot{UseWhen: "run demo"},
-		Cache:     manifest.Cache{Enabled: false},
+		Adapter: &manifest.Adapter{
+			Kind: "cli", OutputMode: "text", OutputField: "text", Operation: "run",
+			Confidence: "high",
+			Evidence:   []string{"test fixture mapping"},
+			Argv:       []manifest.Binding{{From: "input", Kind: "stdin"}},
+		},
+		Input:  manifest.Schema{Fields: []manifest.Field{{Name: "input", Type: "any JSON value"}}},
+		Output: manifest.Schema{Fields: []manifest.Field{{Name: "text", Type: "string"}}},
+
+		Grokbot: manifest.Grokbot{UseWhen: "run demo"},
+		Cache:   manifest.Cache{Enabled: false},
 	}
 	entry := registry.Entry{
 		Name: "demo.cli", Strategy: "cli_bridge", Support: string(m.Support),

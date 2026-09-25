@@ -142,6 +142,10 @@ func (e *Engine) One(name string) (*Report, error) {
 			"manifest support "+string(m.Support)+" agrees with registry state "+string(entry.State))
 	}
 
+	// Adapter semantics. A runnable capability must have a mapping, and the
+	// mapping must agree with the contract GrokBot was handed.
+	e.auditAdapter(add, m)
+
 	// Execution target and permissions.
 	if m.Execution.Type == manifest.ExecutionSubprocess {
 		info, err := os.Stat(m.Execution.Command)
@@ -362,4 +366,117 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// auditAdapter checks that a capability's invocation mapping is valid, honest
+// about its confidence, and consistent with the contract it hands to GrokBot.
+//
+// The point of these checks is that a capability must never be able to claim
+// more than its mapping can deliver: a runnable subprocess with no mapping, an
+// unsupported binding kind, or a contract that contradicts the manifest are all
+// ways a name could outrun its behaviour.
+func (e *Engine) auditAdapter(add func(string, bool, Severity, string), m *manifest.Manifest) {
+	if m.Execution.Type != manifest.ExecutionSubprocess {
+		return
+	}
+	runnable := m.Execution.Supported && m.Support.Executable()
+
+	if m.NeedsReinstall() {
+		add("adapter schema", false, SeverityHigh,
+			"manifest schema "+m.Schema+" carries no invocation mapping; reinstall is required")
+		return
+	}
+	if !runnable {
+		if m.Adapter == nil {
+			add("adapter schema", true, SeverityInfo, "capability is not runnable, so no mapping is required")
+		} else {
+			add("adapter schema", true, SeverityInfo, "mapping recorded for a plan-only capability")
+		}
+		return
+	}
+	if m.Adapter == nil {
+		add("adapter schema", false, SeverityCritical,
+			"a runnable subprocess capability has no invocation mapping; it could only pipe JSON to stdin")
+		return
+	}
+	add("adapter schema", true, SeverityInfo,
+		"output "+m.Adapter.OutputMode+" as "+m.Adapter.OutputField)
+
+	// Input bindings must use supported kinds and declare what they need.
+	var problems []string
+	for i, b := range m.Adapter.Argv {
+		switch b.Kind {
+		case "positional", "stdin", "working_dir", "literal", "boolean_flag",
+			"repeated_flag", "flag_equals", "flag":
+		default:
+			problems = append(problems, "binding "+itoa(i)+" has unsupported kind "+b.Kind)
+		}
+		if b.From == "" && b.Kind != "literal" {
+			problems = append(problems, "binding "+itoa(i)+" names no input field")
+		}
+		if (b.Kind == "flag" || b.Kind == "flag_equals" || b.Kind == "boolean_flag" || b.Kind == "repeated_flag") && b.Flag == "" {
+			problems = append(problems, "binding "+itoa(i)+" declares no flag")
+		}
+	}
+	if len(problems) > 0 {
+		add("input bindings", false, SeverityHigh, strings.Join(problems, "; "))
+	} else {
+		add("input bindings", true, SeverityInfo,
+			itoa(len(m.Adapter.Argv))+" argv binding(s) are valid")
+	}
+
+	// Output mode must be one this build can normalize.
+	switch m.Adapter.OutputMode {
+	case "json", "text", "lines", "exit_status", "artifact":
+		add("output mode", true, SeverityInfo, m.Adapter.OutputMode)
+	default:
+		add("output mode", false, SeverityHigh, "unsupported output mode "+m.Adapter.OutputMode)
+	}
+
+	// Confidence must clear the runnable threshold, and a runnable mapping must
+	// record the evidence that justified it.
+	switch m.Adapter.Confidence {
+	case "high", "medium":
+		add("adapter confidence", true, SeverityInfo,
+			m.Adapter.Confidence+" from "+orUnknown(m.Adapter.Layer))
+		if len(m.Adapter.Evidence) == 0 {
+			add("adapter evidence", false, SeverityMedium,
+				"a runnable mapping must record the evidence behind it")
+		} else {
+			add("adapter evidence", true, SeverityInfo, m.Adapter.Evidence[0])
+		}
+	case "low", "":
+		add("adapter confidence", false, SeverityHigh,
+			"confidence is below the runnable threshold, so this capability must not be runnable")
+	default:
+		add("adapter confidence", false, SeverityMedium, "unknown confidence "+m.Adapter.Confidence)
+	}
+
+	// The contract must describe the mode the manifest declares.
+	contract := m.ContractText()
+	if !strings.Contains(contract, m.Adapter.OutputField) {
+		add("grokbot contract", false, SeverityMedium,
+			"the contract does not mention the declared output field "+m.Adapter.OutputField)
+		return
+	}
+	add("grokbot contract", true, SeverityInfo, "contract describes the declared output")
+}
+
+func orUnknown(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "an unrecorded layer"
+	}
+	return s
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
 }

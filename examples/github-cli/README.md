@@ -25,7 +25,7 @@ provisioning is required. The release artifact is the smallest safe route.
 
 ```text
 Strategy:   cli_bridge (supported)
-Runtime:    ~/.grokinstall/runtimes/bat.review (GrokInstall-owned)
+Runtime:    ~/.grokinstall/runtimes/bat.view (GrokInstall-owned)
 method:     github_release
 version:    v0.26.1
 asset:      bat-v0.26.1-aarch64-apple-darwin.tar.gz
@@ -48,8 +48,8 @@ artifact, or one that requires a build backend, takes a different path — see
 
 ```bash
 grokinstall capabilities
-grokininstall test bat.review
-"$HOME/.grokinstall/runtimes/bat.review/bin/bat" --version
-grokinstall audit bat.review
-grokinstall uninstall bat.review
+grokinstall test bat.view
+"$HOME/.grokinstall/runtimes/bat.view/bin/bat" --version
+grokinstall audit bat.view
+grokinstall uninstall bat.view
 ```

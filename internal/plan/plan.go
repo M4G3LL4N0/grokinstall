@@ -63,26 +63,47 @@ type Security struct {
 
 // Plan is the Part 1 deliverable.
 type Plan struct {
-	Schema            string                  `json:"schema"`
-	Source            source.Source           `json:"source"`
-	Goal              string                  `json:"goal"`
-	IsSelf            bool                    `json:"is_self"`
-	Understanding     []string                `json:"understanding"`
-	Inspection        InspectionSummary       `json:"inspection"`
-	Evidence          []evidence.Item         `json:"evidence"`
-	Capabilities      []capability.Capability `json:"capabilities"`
-	GoalReading       strategy.GoalReading    `json:"goal_reading"`
-	Comparison        *strategy.Comparison    `json:"comparison"`
-	Toolchain         []toolchain.Need        `json:"toolchain"`
-	ContextPack       *contextpack.Pack       `json:"context_pack"`
-	ContextPackBytes  int                     `json:"context_pack_bytes"`
-	Constraints       []string                `json:"constraints"`
-	Unresolved        []string                `json:"unresolved_questions"`
-	Manifest          manifest.Manifest       `json:"manifest"`
-	ManifestSupported bool                    `json:"manifest_execution_supported"`
-	Part              int                     `json:"part"`
-	Notes             []string                `json:"notes"`
-	Security          Security                `json:"security"`
+	Schema           string                  `json:"schema"`
+	Source           source.Source           `json:"source"`
+	Goal             string                  `json:"goal"`
+	IsSelf           bool                    `json:"is_self"`
+	Understanding    []string                `json:"understanding"`
+	Inspection       InspectionSummary       `json:"inspection"`
+	Evidence         []evidence.Item         `json:"evidence"`
+	Capabilities     []capability.Capability `json:"capabilities"`
+	GoalReading      strategy.GoalReading    `json:"goal_reading"`
+	Comparison       *strategy.Comparison    `json:"comparison"`
+	Toolchain        []toolchain.Need        `json:"toolchain"`
+	ContextPack      *contextpack.Pack       `json:"context_pack"`
+	ContextPackBytes int                     `json:"context_pack_bytes"`
+	Constraints      []string                `json:"constraints"`
+	Unresolved       []string                `json:"unresolved_questions"`
+	Manifest         manifest.Manifest       `json:"manifest"`
+	// Invocation records the evidence-backed operation the chosen mapping can
+	// actually perform. Capability naming uses it so a name never promises more
+	// than the mapping does.
+	Invocation        InvocationSummary `json:"invocation"`
+	ManifestSupported bool              `json:"manifest_execution_supported"`
+	Part              int               `json:"part"`
+	Notes             []string          `json:"notes"`
+	Security          Security          `json:"security"`
+}
+
+// InvocationSummary is the small, honest description of what an installed
+// capability will really do.
+type InvocationSummary struct {
+	// Operation is the evidence-backed verb, e.g. "view" or "filter".
+	Operation string `json:"operation,omitempty"`
+	// OutputMode is how upstream output is read.
+	OutputMode string `json:"output_mode,omitempty"`
+	// Confidence is how well evidenced the mapping is.
+	Confidence string `json:"confidence,omitempty"`
+	// Layer records which discovery layer produced the mapping.
+	Layer string `json:"layer,omitempty"`
+	// AdapterRequired reports that no trustworthy mapping exists.
+	AdapterRequired bool `json:"adapter_required,omitempty"`
+	// Reason explains an adapter_required outcome.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Build runs the full Part 1 pipeline.

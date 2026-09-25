@@ -28,16 +28,16 @@ $ grokinstall capabilities --json
 {
   "capabilities": [
     {
-      "name": "bat.review",
+      "name": "bat.view",
       "description": "the user wants GrokBot to use bat to inspect text files",
       "strategy": "cli_bridge",
       "support": "supported",
       "state": "ready",
       "runnable": true,
-      "call": "grokinstall run bat.review --input '<json>'",
+      "call": "grokinstall run bat.view --input '<json>'",
       "input":  { "fields": [] },
       "output": { "fields": [] },
-      "grokbot_contract": "CAPABILITY\nbat.review\n..."
+      "grokbot_contract": "CAPABILITY\nbat.view\n..."
     }
   ],
   "total": 1,
@@ -55,24 +55,32 @@ implementation details GrokBot should not depend on.
 ## 2. Read the contract
 
 ```bash
-$ grokinstall grokbot bat.review
+$ grokinstall grokbot bat.view
 ```
 
 ```text
 CAPABILITY
-bat.review
+bat.view
 
 USE WHEN
-the user wants GrokBot to: Let GrokBot use bat to inspect text files
+the user wants GrokBot to: Let GrokBot use bat to review text/source files
 
 CALL
-grokinstall run bat.review --input '<json>'
+grokinstall run bat.view --input '<json>'
 
 INPUT
-input: object - JSON object passed to the capability on stdin
+style: string - passed as --style <value>
+language: string - passed as --language <value>
+path: string (required) - passed as argument 1 to the tool
 
 OUTPUT
-result: object - the capability's JSON result
+text: string - the tool's own output, verbatim
+
+OPERATION
+view (translated to this tool's own arguments)
+
+NOTES
+bat is a file display tool; this capability displays a file, it does not review code
 
 DO NOT
 load the implementation repository or its documentation into GrokBot before
@@ -80,18 +88,25 @@ invoking this capability
 
 ON FAILURE
 Run:
-grokinstall diagnose bat.review
+grokinstall diagnose bat.view
 ```
 
-The contract is bounded: 8192 bytes hard cap, 432 bytes measured for the
-flagship `bat` run. It contains only capability, when to use it, how to call
-it, input, output, limitations and failure recovery. It never contains secrets,
-local paths, README instructions, receipt internals or source snippets.
+The INPUT and OUTPUT sections are derived from the capability's invocation
+mapping, not written by hand. Each field says where its value actually goes,
+and the OUTPUT section names the mode the upstream tool really produces. A
+capability that prints text says so; it does not promise a JSON result the tool
+never emits.
+
+The contract is bounded: 8192 bytes hard cap, 670 bytes measured for the
+flagship `bat` run on a long goal. It contains only capability, when to use it,
+how to call it, input, output, the operation, limitations and failure recovery.
+It never contains secrets, local paths, README instructions, receipt internals or
+source snippets.
 
 ## 3. Call
 
 ```bash
-grokinstall run bat.review --input '{"query":"TODO"}'
+grokinstall run bat.view --input '{"path":"/path/to/file.go"}'
 ```
 
 Input is one JSON object, via `--input` or stdin. Output is one envelope:
@@ -136,17 +151,17 @@ command. Forward the `smallest_fix` to the user; do not improvise a repair.
 ```json
 {
   "reports": [{
-    "capability": "bat.review",
+    "capability": "bat.view",
     "healthy": false,
     "findings": [{
       "severity": "critical",
       "symptom": "provisioned runtime was modified after installation",
-      "evidence": ["runtime: ~/.grokinstall/runtimes/bat.review", "bin/bat: content changed"],
+      "evidence": ["runtime: ~/.grokinstall/runtimes/bat.view", "bin/bat: content changed"],
       "root_cause": "files no longer match the hashes recorded at provisioning time",
       "confidence": "high",
       "component": "runtime",
       "smallest_fix": "reinstall the capability to restore a verified runtime",
-      "verification_command": "grokinstall audit bat.review"
+      "verification_command": "grokinstall audit bat.view"
     }]
   }]
 }
@@ -158,7 +173,7 @@ command. Forward the `smallest_fix` to the user; do not improvise a repair.
    does not expose what the user needs, say so and suggest an install goal.
 2. **Trust `runnable`, not existence.** A listed capability may be broken; the
    default capability list already filters this.
-3. **Do not re-implement a capability.** If `bat.review` exists, call it.
+3. **Do not re-implement a capability.** If `bat.view` exists, call it.
 4. **Forward failures with their fix.** `diagnose` is the answer to "why is this
    broken"; do not guess.
 5. **Pass input through, do not transform it.** The capability owns its own

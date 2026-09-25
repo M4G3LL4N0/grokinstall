@@ -33,7 +33,7 @@ grokinstall audit --all
 ## Reading the result
 
 ```text
-Audit: bat.review
+Audit: bat.view
 
   [ok  ] low      artifact checksum        upstream published no checksum; the artifact was not verified by a published hash
   [ok  ] info     installed state           installation is ready

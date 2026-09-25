@@ -62,10 +62,10 @@ grokinstall install https://github.com/sharkdp/bat \
 grokinstall capabilities
 
 # The contract for one capability
-grokinstall grokbot bat.review
+grokinstall grokbot bat.view
 
 # Call it
-grokinstall run bat.review --input '{}'
+grokinstall run bat.view --input '{}'
 ```
 
 ## How It Works
@@ -316,7 +316,7 @@ and `uninstall`. Exit codes: `0` success, `1` failure, `2` usage error.
 ## Diagnostics
 
 ```bash
-grokinstall diagnose bat.review
+grokinstall diagnose bat.view
 ```
 
 ```text
@@ -325,7 +325,7 @@ SYMPTOM
   provisioned runtime was modified after installation
 
 EVIDENCE
-  runtime: ~/.grokinstall/runtimes/bat.review
+  runtime: ~/.grokinstall/runtimes/bat.view
   bin/bat: content changed
 
 ROOT CAUSE
@@ -338,11 +338,11 @@ FIX
   reinstall the capability to restore a verified runtime
 
 VERIFY
-  grokinstall audit bat.review
+  grokinstall audit bat.view
 ```
 
 ```bash
-grokinstall audit bat.review
+grokinstall audit bat.view
 ```
 
 Audits manifest validity, receipt consistency, runtime ownership and integrity,

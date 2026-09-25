@@ -6,9 +6,13 @@ import (
 )
 
 // installed builds a realistic installed manifest.
+//
+// It is written under the current schema and carries an invocation mapping,
+// because a runnable subprocess capability without one cannot honestly perform
+// any operation: it would only pipe JSON to stdin.
 func installed() *Manifest {
 	return &Manifest{
-		Schema:    SchemaID,
+		Schema:    CurrentSchema,
 		Name:      "widget.search",
 		Version:   "1",
 		Source:    "path:/tmp/widget",
@@ -16,10 +20,20 @@ func installed() *Manifest {
 		Strategy:  "cli_bridge",
 		Support:   SupportReady,
 		Status:    "ready",
-		Execution: Execution{Type: "subprocess", Command: "widget", Supported: true, TimeoutMs: 30000},
-		Input:     Schema{Fields: []Field{{Name: "query", Type: "string", Required: true}}},
-		Output:    Schema{Fields: []Field{{Name: "matches", Type: "array"}}},
-		Grokbot:   Grokbot{UseWhen: "the user wants to search the widget", DoNot: "load the repository first"},
+		Execution: Execution{Type: "subprocess", Command: "widget", Supported: true, TimeoutMs: 30000, Ownership: OwnershipGrokinstall},
+		Adapter: &Adapter{
+			Kind:        "cli",
+			OutputMode:  "text",
+			OutputField: "text",
+			Operation:   "search",
+			Confidence:  "high",
+			Layer:       "bounded_help",
+			Evidence:    []string{"--help declares a FILE positional argument"},
+			Argv:        []Binding{{From: "query", Kind: "positional", Position: 0, Required: true}},
+		},
+		Input:   Schema{Fields: []Field{{Name: "query", Type: "string", Required: true}}},
+		Output:  Schema{Fields: []Field{{Name: "text", Type: "string", Description: "the tool's own output, verbatim"}}},
+		Grokbot: Grokbot{UseWhen: "the user wants to search the widget", DoNot: "load the repository first"},
 	}
 }
 
@@ -132,8 +146,17 @@ func TestContractListsInputAndOutputFields(t *testing.T) {
 	if !strings.Contains(text, "INPUT") || !strings.Contains(text, "query") {
 		t.Fatalf("contract missing input section:\n%s", text)
 	}
-	if !strings.Contains(text, "OUTPUT") || !strings.Contains(text, "matches") {
+	// The output section must describe the output mode the adapter actually
+	// declares, not a hand-written promise. This is the whole point of the
+	// change: the contract may not claim a shape the upstream does not produce.
+	if !strings.Contains(text, "OUTPUT") {
 		t.Fatalf("contract missing output section:\n%s", text)
+	}
+	if !strings.Contains(text, "text") || !strings.Contains(text, "verbatim") {
+		t.Fatalf("contract must describe the declared text output honestly:\n%s", text)
+	}
+	if strings.Contains(text, "matches") {
+		t.Fatalf("contract must not promise a field the adapter does not produce:\n%s", text)
 	}
 }
 

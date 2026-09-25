@@ -1,8 +1,10 @@
 package provision
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -413,3 +415,16 @@ type Metadata struct {
 
 // MetadataSchema identifies the runtime metadata format.
 const MetadataSchema = "grokinstall/runtime/v1"
+
+// LoadMetadata reads runtime metadata from a metadata.json path.
+func LoadMetadata(path string) (Metadata, error) {
+	var m Metadata
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return m, fmt.Errorf("runtime metadata %s is corrupt: %w", path, err)
+	}
+	return m, nil
+}

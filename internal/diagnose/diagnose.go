@@ -7,6 +7,7 @@
 package diagnose
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/M4G3LL4N0/grokinstall/internal/adapter"
 	"github.com/M4G3LL4N0/grokinstall/internal/manifest"
 	"github.com/M4G3LL4N0/grokinstall/internal/provision"
 	"github.com/M4G3LL4N0/grokinstall/internal/receipt"
@@ -170,6 +172,12 @@ func (e *Engine) One(name string) (*Report, error) {
 		return rep, nil
 	}
 	m, err := manifest.Load(entry.ManifestPath)
+	if err == nil {
+		// Schema and mapping problems are judged before anything else: they
+		// explain every downstream symptom, so reporting them late would send
+		// the caller chasing the wrong component.
+		e.diagnoseAdapter(add, name, entry, m)
+	}
 	if err != nil {
 		add(Finding{
 			Severity:     SeverityCritical,
@@ -430,4 +438,125 @@ func (r *Report) Render(w io.Writer) {
 		fmt.Fprintf(w, "\nFIX\n  %s\n", f.Fix)
 		fmt.Fprintf(w, "\nVERIFY\n  %s\n", f.Verification)
 	}
+}
+
+// diagnoseAdapter explains why a capability cannot execute, in the same evidence
+// shape as every other diagnosis: symptom, evidence, root cause, confidence,
+// component, fix and a verification command.
+//
+// The rule this encodes: GrokInstall does not automatically trust changed
+// upstream behaviour. If the recorded mapping no longer matches the tool, that
+// is reported as a problem to investigate, not silently re-derived.
+func (e *Engine) diagnoseAdapter(add func(Finding), name string, entry registry.Entry, m *manifest.Manifest) {
+	if m.NeedsReinstall() {
+		add(Finding{
+			Severity:     SeverityHigh,
+			Symptom:      "capability was installed before invocation mappings existed",
+			Evidence:     []string{"manifest schema: " + m.Schema, "adapter: none recorded"},
+			RootCause:    "the manifest predates the adapter model, so nothing describes how input reaches the tool",
+			Confidence:   "high",
+			Component:    "adapter",
+			Fix:          "reinstall the capability so GrokInstall can build a real invocation mapping",
+			Verification: "grokinstall test " + name,
+		})
+		return
+	}
+	if m.Execution.Type != manifest.ExecutionSubprocess {
+		return
+	}
+	if !m.Runnable() {
+		return
+	}
+	if m.Adapter == nil {
+		add(Finding{
+			Severity:     SeverityCritical,
+			Symptom:      "a runnable capability has no invocation mapping",
+			Evidence:     []string{"adapter: none recorded", "strategy: " + m.Strategy},
+			RootCause:    "without a mapping the runtime could only pipe JSON to stdin, which does not perform the declared operation",
+			Confidence:   "high",
+			Component:    "adapter",
+			Fix:          "reinstall the capability so GrokInstall can build a real invocation mapping",
+			Verification: "grokinstall test " + name,
+		})
+		return
+	}
+	switch m.Adapter.Confidence {
+	case "low", "":
+		add(Finding{
+			Severity: SeverityHigh,
+			Symptom:  "the invocation mapping is below the runnable confidence threshold",
+			Evidence: []string{
+				"confidence: " + orNone(m.Adapter.Confidence),
+				"layer: " + orNone(m.Adapter.Layer),
+			},
+			RootCause:    "GrokInstall could not establish a trustworthy goal-to-argument mapping, so the capability must stay planned",
+			Confidence:   "high",
+			Component:    "adapter",
+			Fix:          "reinstall with --command pointing at a tool whose arguments GrokInstall can map, or define an adapter",
+			Verification: "grokinstall inspect " + m.Source,
+		})
+		return
+	}
+	// A mapping that disagrees with the recorded contract is a real defect.
+	contract := m.ContractText()
+	if m.Adapter.OutputField != "" && !strings.Contains(contract, m.Adapter.OutputField) {
+		add(Finding{
+			Severity:     SeverityMedium,
+			Symptom:      "the GrokBot contract does not describe the mapping's output",
+			Evidence:     []string{"declared output field: " + m.Adapter.OutputField},
+			RootCause:    "the contract and the manifest disagree, so a caller cannot tell what a successful result contains",
+			Confidence:   "high",
+			Component:    "adapter",
+			Fix:          "reinstall the capability to regenerate a consistent contract",
+			Verification: "grokinstall grokbot " + name,
+		})
+	}
+	// Recorded evidence that no longer holds is reported, never auto-repaired.
+	if m.Adapter.Layer == "bounded_help" && len(m.Adapter.Evidence) > 0 {
+		if e.helpNoLongerMatches(m) {
+			add(Finding{
+				Severity:     SeverityMedium,
+				Symptom:      "the tool's current help output no longer matches the evidence recorded at install time",
+				Evidence:     []string{"recorded: " + m.Adapter.Evidence[0], "command: " + m.Execution.Command},
+				RootCause:    "the upstream tool changed its interface after installation, so the recorded mapping may no longer be correct",
+				Confidence:   "medium",
+				Component:    "adapter",
+				Fix:          "reinstall the capability so the mapping is rebuilt from the tool's current interface",
+				Verification: "grokinstall inspect " + m.Source,
+			})
+		}
+	}
+}
+
+func orNone(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "not recorded"
+	}
+	return s
+}
+
+// helpNoLongerMatches re-probes a help-derived mapping and reports whether the
+// tool still advertises what was recorded.
+//
+// This is a bounded, read-only probe. It never repairs anything, and a changed
+// help text is treated as a reason to investigate rather than as something to
+// silently accept or overwrite.
+func (e *Engine) helpNoLongerMatches(m *manifest.Manifest) bool {
+	if m.Execution.Command == "" {
+		return false
+	}
+	probe := adapter.DefaultHelpProbe()
+	probe.Command = m.Execution.Command
+	res := adapter.ProbeHelp(context.Background(), probe)
+	if !res.OK {
+		return true
+	}
+	for _, ev := range m.Adapter.Evidence {
+		if strings.Contains(ev, "positional") && !strings.Contains(strings.ToLower(res.Text), "<file") &&
+			!strings.Contains(strings.ToLower(res.Text), "[file") &&
+			!strings.Contains(strings.ToLower(res.Text), "<path") {
+			return true
+		}
+	}
+	return false
 }

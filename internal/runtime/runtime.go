@@ -58,6 +58,16 @@ const (
 	CodeNonZeroExit     = "nonzero_exit"
 	CodeMalformedOutput = "malformed_output"
 	CodeHandlerFailed   = "handler_failed"
+	// CodeIntegrityFailure means the execution target no longer matches the
+	// artifact that was verified at install time. Execution is blocked; the
+	// caller is told to diagnose. Nothing is repaired here, because repairing
+	// and executing are separate trust decisions.
+	CodeIntegrityFailure = "integrity_failure"
+	// CodeInvalidAdapter means the installed mapping is unusable, so the
+	// capability cannot honestly perform its declared operation.
+	CodeInvalidAdapter = "invalid_adapter"
+	// CodeAdapterRequired means no trustworthy mapping was ever established.
+	CodeAdapterRequired = "adapter_required"
 )
 
 // Defaults for safety bounds.
@@ -71,6 +81,12 @@ type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Details string `json:"details,omitempty"`
+	// Capability names the capability that failed, when known.
+	Capability string `json:"capability,omitempty"`
+	// Component names the part that failed, e.g. "runtime" or "adapter".
+	Component string `json:"component,omitempty"`
+	// RecommendedAction is the one command a caller should run next.
+	RecommendedAction string `json:"recommended_action,omitempty"`
 }
 
 // Response is the universal capability result.
@@ -115,6 +131,43 @@ type Spec struct {
 	// ExpectJSON declares that the upstream produces a JSON object. When set,
 	// non-JSON output is a malformed-output failure rather than plain text.
 	ExpectJSON bool
+
+	// Adapter, when set, is the invocation mapping for a subprocess. It
+	// replaces the legacy stdin-JSON pipe: input fields are validated against
+	// the manifest and translated into real argv and stdin.
+	Adapter *Adapter
+	// OutputMode, when set, normalizes upstream output into an honest result.
+	OutputMode string
+	// OutputField is the result key the normalized value is placed under.
+	OutputField string
+	// Capability names the capability, so failures can be attributed.
+	Capability string
+	// ExitCode, when set, is returned for OutputExitStatus mappings.
+	ExitCode *int
+}
+
+// Adapter is the runtime's view of an invocation mapping. It is populated from
+// a manifest so the runtime does not need to know about the manifest type.
+type Adapter struct {
+	Kind        string
+	OutputMode  string
+	OutputField string
+	Operation   string
+	Argv        []Binding
+	Stdin       *Binding
+	WorkingDir  *Binding
+}
+
+// Binding maps one input field to one place in an invocation.
+type Binding struct {
+	From             string
+	Kind             string
+	Flag             string
+	Position         int
+	Value            string
+	Required         bool
+	AllowDashLeading bool
+	EndOfOptions     bool
 }
 
 // Handler is a capability implemented inside GrokInstall.
@@ -162,6 +215,12 @@ func (r *Runtime) Invoke(ctx context.Context, spec Spec, input json.RawMessage) 
 func (r *Runtime) invokeSubprocess(ctx context.Context, spec Spec, input json.RawMessage, started time.Time) (*Response, error) {
 	if strings.TrimSpace(spec.Command) == "" {
 		return failure(CodeNotExecutable, "no command is registered for this capability", started, len(input)), nil
+	}
+
+	// When an adapter is present, input is validated and translated into real
+	// argv. This is the path that makes a cli_bridge capability usable.
+	if spec.Adapter != nil {
+		return r.invokeAdapted(ctx, spec, input, started)
 	}
 
 	args, err := r.buildArgs(spec, input)
