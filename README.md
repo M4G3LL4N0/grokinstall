@@ -1,5 +1,9 @@
 # GrokInstall
 
+<p align="center">
+  <img src="assets/social-card.png" alt="GrokInstall" width="100%">
+</p>
+
 **Install the capability, not the complexity.**
 
 Give GrokInstall a project and tell it what you want GrokBot to do.
