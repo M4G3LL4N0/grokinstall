@@ -28,3 +28,8 @@ secrets.json
 
 # stray temp files from interrupted tooling
 _tmp_*
+
+# local agent tooling (per-developer, not shared project state)
+.cursor/
+.opencode/
+CLAUDE.md
