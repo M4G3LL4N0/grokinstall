@@ -244,6 +244,9 @@ func (r *Runtime) invokeSubprocess(ctx context.Context, spec Spec, input json.Ra
 	cmd := exec.CommandContext(runCtx, spec.Command, args...)
 	cmd.Dir = spec.WorkingDir
 	cmd.Env = buildEnv(spec.Env)
+	// Own process group so a timeout kills descendants, not just the
+	// direct child. See process_unix.go.
+	isolate(cmd)
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	switch spec.InputMode {

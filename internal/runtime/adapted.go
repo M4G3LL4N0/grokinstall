@@ -78,6 +78,9 @@ func (r *Runtime) invokeAdapted(ctx context.Context, spec Spec, input json.RawMe
 	}
 	cmd.Dir = workDir
 	cmd.Env = buildEnv(spec.Env)
+	// Own process group so a timeout kills descendants, not just the
+	// direct child. See process_unix.go.
+	isolate(cmd)
 	cmd.WaitDelay = 500 * time.Millisecond
 	if len(plan.Stdin) > 0 {
 		cmd.Stdin = bytes.NewReader(plan.Stdin)
