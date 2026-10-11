@@ -1,101 +1,68 @@
-# grokinstall
+# GrokInstall
 
-> Your context already has the answer. Built in Go. 3 entry points (cli.py, main.go). Live at grokinstall-website.vercel.app.
+> Install the capability, not the complexity.
 
-The implementation summary below is intentionally conservative. Claims from NORTHSTAR are not presented as shipped functionality.
+A Go CLI that inspects a source, compares integration strategies, provisions a bounded executable route, verifies it, registers a capability, and leaves a receipt.
 
-- [GitHub repository](https://github.com/M4G3LL4N0/grokinstall)
-- [Project site](https://grokinstall-website.vercel.app)
+[Documentation](docs/architecture.md) · [NOAERTH](https://www.noaerth.com)
 
-<!-- NOAERTH_IMAGE_SLOT: grokinstall/hero -->
+![GrokInstall integration foundry](assets/images/hero.svg)
 
-## What it is
+## A repository-to-capability workflow
 
-Your context already has the answer. Built in Go. 3 entry points (cli.py, main.go). Live at grokinstall-website.vercel.app.
+GrokInstall does not begin by running an installer. It inspects a source without executing its code, records evidence, compares integration strategies, plans a route, provisions only with explicit risk-specific approval, verifies the result, registers the capability, and leaves a receipt.
 
-This repository is part of the NOAERTH venture ecosystem. The current public-facing evidence identifies it as a early-stage project rather than a production-ready system.
+![GrokInstall capability pipeline](assets/images/capability-pipeline.svg)
 
-## Capabilities
-
-### Available evidence
-
-- The repository contains the implementation and documentation associated with the project description above.
-- The technology signals currently visible in the local project are listed in the technical notes below.
-- No additional capability is asserted here without a direct implementation reference.
-
-### Experimental or planned
-
-Roadmap intent is deliberately not represented as shipped functionality. Review NORTHSTAR and source implementation together before adding future-facing claims.
-
-<!-- NOAERTH_IMAGE_SLOT: grokinstall/workflow -->
-
-## How it works
-
-The current evidence supports a repository-level application or tool workflow, but does not provide enough verified detail in the Part 1 record to publish a component-level architecture diagram. The architecture slot is reserved for a deterministic diagram after the source flow is reviewed.
-
-<!-- NOAERTH_IMAGE_SLOT: grokinstall/architecture -->
-
-## Quick start
-
-### Prerequisites
-
-- A runtime suitable for `Node.js`.
-- A clean checkout of this repository.
-
-### Install
-
-```sh
-pnpm install
+```text
+source → inspect → evidence → strategy → plan → provision → adapter → runtime → verify → receipt
 ```
 
-### Run locally
+## Safety model
 
-```sh
-Use the repository's documented entry point after installing dependencies.
+The runtime uses direct argv execution, reduced inherited environment, bounded output, process-group termination, input validation, and integrity checks for GrokInstall-owned runtimes. Archive traversal, unsafe paths, symlinks, oversized entries, decompression bombs, and secret-like content are treated as hazards. A failed verification does not register a capability.
+
+## Real commands
+
+```bash
+`go install github.com/M4G3LL4N0/grokinstall/cmd/grokinstall@latest`
+`grokinstall inspect https://github.com/sharkdp/bat`
+`grokinstall plan https://github.com/sharkdp/bat --goal "Let GrokBot inspect text files"`
+`grokinstall capabilities --json`
 ```
 
-### Build
+Other implemented command surfaces include `compare`, `install`, `grokbot`, `run`, `diagnose`, `audit`, and `uninstall`. Supported routes include `cli_bridge`, `knowledge_import`, `external_execution`, and `no_install`; several other strategies are compared but remain plan-only.
 
-```sh
-pnpm run build
-```
+## Architecture
 
-### Test
+Go CLI with inspect, strategy, manifest, adapter, runtime, provision, registry, receipt, contextpack, and usage packages
 
-```sh
-pnpm run test
-```
+![GrokInstall architecture](assets/images/architecture.svg)
 
-Commands are included only when they were detected in the repository manifest; verify environment-specific requirements before deployment.
+The manifest is the executable contract. The adapter maps structured JSON to argv/stdin without shell interpolation. The registry owns lifecycle state, receipts preserve audit history, context packs bound model context, and usage records measured bytes and operation counts.
 
-## Technical notes
+## Evidence and limits
 
-- **Primary language:** JavaScript/TypeScript
-- **Runtime:** Node.js
-- **Package manager:** pnpm
-- **Framework and integration signals:** See the source tree and package manifests; no framework claim is made here without a direct implementation reference.
-- **Entry-point signals:** package.json
-- **Test evidence:** No test evidence recorded in the inventory
-- **Repository topics:** `go`, `cache`, `cmd`, `data-structure`, `dung30n5`, `grokinstall`, `live`, `noaerth`
+| Evidence | Status |
+|---|---|
+| 30-second default runtime timeout | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
+| 1 MiB default output bound | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
+| 10 strategies × 12 qualitative dimensions (documented source fact) | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
 
-## Status and roadmap
+- Package-manager provisioning is classified but has no executor.
+- Historical test counts require a current rerun.
+- Artifact/capability names drift across historical docs.
 
-**Current status:** Early-stage project.
+Historical test totals and live acceptance claims must be labeled by commit until rerun against the current source. The tool does not claim universal support for arbitrary package managers or install scripts.
 
-**Current:** The repository and its documented implementation are available for inspection.
+## Source map
 
-**Next:** Reconcile the README, source behavior, and safe public product language before adding deeper examples or diagrams.
+- `internal/inspect/inspect.go`
+- `internal/strategy/strategy.go`
+- `internal/adapter/adapter.go`
+- `internal/runtime/runtime.go`
+- `internal/provision/provision.go`
 
-**Future:** Product direction is maintained separately and must not be read as a shipped feature list.
+## Status
 
-## Contributing and license
-
-Follow the repository's existing contribution and licensing files where present. This README does not invent an open-source license or contribution policy.
-
-## Visual documentation
-
-Image slots are intentionally comments until authentic screenshots, deterministic diagrams, or approved conceptual visuals exist. No absent image file is referenced.
-
-## NOAERTH
-
-[NOAERTH](https://www.noaerth.com) is the venture ecosystem associated with this project.
+Developer infrastructure in active development. Its distinctive promise is the safety pipeline and explicit refusal behavior, not frictionless automation at any cost.
