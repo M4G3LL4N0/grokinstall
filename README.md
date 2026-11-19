@@ -25,10 +25,10 @@ The runtime uses direct argv execution, reduced inherited environment, bounded o
 ## Real commands
 
 ```bash
-`go install github.com/M4G3LL4N0/grokinstall/cmd/grokinstall@latest`
-`grokinstall inspect https://github.com/sharkdp/bat`
-`grokinstall plan https://github.com/sharkdp/bat --goal "Let GrokBot inspect text files"`
-`grokinstall capabilities --json`
+go install github.com/M4G3LL4N0/grokinstall/cmd/grokinstall@latest
+grokinstall inspect https://github.com/sharkdp/bat
+grokinstall plan https://github.com/sharkdp/bat --goal "Let GrokBot inspect text files"
+grokinstall capabilities --json
 ```
 
 Other implemented command surfaces include `compare`, `install`, `grokbot`, `run`, `diagnose`, `audit`, and `uninstall`. Supported routes include `cli_bridge`, `knowledge_import`, `external_execution`, and `no_install`; several other strategies are compared but remain plan-only.
